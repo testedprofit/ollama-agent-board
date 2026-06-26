@@ -56,6 +56,13 @@ If your system has `OLLAMA_HOST=0.0.0.0:11434`, the app normalizes that bind add
 
 The board makes sequential non-streaming Ollama `/api/generate` calls. Each phase receives the user goal, source material, and prior phase output, then writes its own result back into the visual board. This keeps the implementation easy to inspect while still producing a useful agentic loop.
 
+The Run agent prompt is built from a local operating template, so blunt goals still become structured work. It uses two structured passes:
+
+- Operating checks: Responsibility split, Brief clarity, Quality check, Safety check.
+- Prompt blueprint: Define, Direct, Data, Design.
+
+Each phase receives task boundaries, source-handling rules, assumptions, acceptance criteria, and a phase-specific output contract.
+
 ## Scripts
 
 ```bash
