@@ -4,9 +4,21 @@ import { fileURLToPath } from 'node:url'
 
 const app = express()
 const port = Number(process.env.PORT ?? 4173)
-const ollamaHost = process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434'
 const root = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.join(root, 'dist')
+
+function normalizeOllamaHost(value = 'http://127.0.0.1:11434') {
+  const withProtocol = /^https?:\/\//.test(value) ? value : `http://${value}`
+  const url = new URL(withProtocol)
+
+  if (url.hostname === '0.0.0.0' || url.hostname === '::') {
+    url.hostname = '127.0.0.1'
+  }
+
+  return url.toString().replace(/\/$/, '')
+}
+
+const ollamaHost = normalizeOllamaHost(process.env.OLLAMA_HOST)
 
 app.use(express.json({ limit: '4mb' }))
 
