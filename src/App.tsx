@@ -144,7 +144,7 @@ const agentPhases: AgentPhase[] = [
     title: 'Intake',
     role: 'Goal mapper',
     prompt:
-      'Use Define, Responsibility split, and Data. Restate the goal as a useful work order, infer a sane outcome from sparse input, identify material missing context, and name the first safe move.',
+      'Clarify the brief, restate the goal as a useful work order, infer a sane outcome from sparse input, identify material missing context, and name the first safe move.',
     demo:
       'Outcome: a private local AI workspace. Missing context: target model and first data source. First move: confirm Ollama is online and choose a lightweight workflow.',
     icon: ClipboardList,
@@ -155,7 +155,7 @@ const agentPhases: AgentPhase[] = [
     title: 'Strategy',
     role: 'Planner',
     prompt:
-      'Use Direct and Design. Break the goal into useful local AI actions with checkpoints, stop conditions, acceptance criteria, and a small reviewable path.',
+      'Break the goal into useful local AI actions with checkpoints, stop conditions, acceptance criteria, and a small reviewable path.',
     demo:
       'Plan: ingest the material, extract decisions, draft the artifact, critique it, then export the final version as markdown.',
     icon: Brain,
@@ -166,7 +166,7 @@ const agentPhases: AgentPhase[] = [
     title: 'Workbench',
     role: 'Maker',
     prompt:
-      'Use Data and Design. Produce the highest leverage artifact for this stage: specific, practical, structured, and ready for downstream review.',
+      'Use the available evidence to produce the highest leverage artifact for this stage: specific, practical, structured, and ready for downstream review.',
     demo:
       'Drafted a reusable board with saved runs, quick text actions, and a five-node local agent loop.',
     icon: Boxes,
@@ -177,7 +177,7 @@ const agentPhases: AgentPhase[] = [
     title: 'Review',
     role: 'Critic',
     prompt:
-      'Use Quality check and Safety check. Review the prior output for accuracy, evidence, risk, gaps, unclear assumptions, and what should be fixed before use.',
+      'Review the prior output for accuracy, evidence, risk, gaps, unclear assumptions, and what should be fixed before use.',
     demo:
       'Risk: users may not have a model pulled yet. Add clear offline states and a demo run so the interface still teaches itself.',
     icon: SearchCheck,
@@ -188,7 +188,7 @@ const agentPhases: AgentPhase[] = [
     title: 'Ship',
     role: 'Closer',
     prompt:
-      'Use Safety check and Design. Return a concise final answer with reusable artifacts, verification notes, safety status, and the next safe prompt or action.',
+      'Return a concise final answer with reusable artifacts, verification notes, safety status, and the next safe prompt or action.',
     demo:
       'Ready to use: start Ollama, pull a model, run the app, pick a workflow, then export the generated run notes.',
     icon: ShieldCheck,

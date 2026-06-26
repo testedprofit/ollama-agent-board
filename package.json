@@ -1,6 +1,6 @@
 {
   "name": "ollama-agent-board",
-  "private": false,
+  "private": true,
   "version": "0.1.0",
   "description": "A visual local AI agent board for running Ollama workflows on your own PC.",
   "type": "module",
