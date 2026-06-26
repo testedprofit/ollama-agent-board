@@ -20,6 +20,7 @@ import {
   Cpu,
   Download,
   FileText,
+  Gauge,
   Layers3,
   Loader2,
   Maximize2,
@@ -121,6 +122,10 @@ type AgentWorkbenchWindowProps = {
   output: string
   scale: number
   selectedPhaseId: WorkbenchPhaseId
+  steps: AgentStep[]
+}
+
+type PhaseProgressRailProps = {
   steps: AgentStep[]
 }
 
@@ -457,16 +462,25 @@ function composeAgentOutput(steps: AgentStep[]): string {
     .join('\n\n')
 }
 
+function getPhaseStatusLabel(status: PhaseStatus): string {
+  if (status === 'active') {
+    return 'Running'
+  }
+
+  if (status === 'done') {
+    return 'Done'
+  }
+
+  if (status === 'error') {
+    return 'Needs attention'
+  }
+
+  return 'Ready'
+}
+
 function AgentNode({ data }: NodeProps<AgentNodeType>) {
   const Icon = data.icon
-  const statusLabel =
-    data.status === 'active'
-      ? 'Running'
-      : data.status === 'done'
-        ? 'Done'
-        : data.status === 'error'
-          ? 'Needs attention'
-          : 'Ready'
+  const statusLabel = getPhaseStatusLabel(data.status)
 
   return (
     <div
@@ -486,6 +500,26 @@ function AgentNode({ data }: NodeProps<AgentNodeType>) {
       </div>
       <p>{data.result || data.prompt}</p>
       <Handle className="node-handle" type="source" position={Position.Right} />
+    </div>
+  )
+}
+
+function PhaseProgressRail({ steps }: PhaseProgressRailProps) {
+  return (
+    <div className="phase-progress-rail" aria-label="Agent run progress">
+      {agentPhases.map((phase, index) => {
+        const step = steps.find((candidate) => candidate.id === phase.id)
+        const status = step?.status ?? 'idle'
+        return (
+          <div className={`phase-progress-item phase-progress-${status}`} key={phase.id}>
+            <span className="phase-progress-index">{index + 1}</span>
+            <div>
+              <strong>{phase.title}</strong>
+              <span>{getPhaseStatusLabel(status)}</span>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -723,6 +757,32 @@ function App() {
   const isOnline = connection === 'online'
   const agentOutput = composeAgentOutput(steps)
   const workbenchOutput = agentOutput || quickOutput
+  const activeStep = steps.find((step) => step.status === 'active')
+  const activePhase = activeStep
+    ? agentPhases.find((phase) => phase.id === activeStep.id)
+    : undefined
+  const progressPercent = Math.round((completedSteps / agentPhases.length) * 100)
+  const goalCharacterCount = objective.trim().length
+  const sourceCharacterCount = sourceText.trim().length
+  const runButtonDisabled = isRunning || !selectedModel
+  const quickActionDisabled = isRunning || !selectedModel
+  const runButtonLabel = !selectedModel ? 'Model required' : isRunning ? 'Running' : 'Run agent'
+  const quickActionLabel = !selectedModel ? 'Choose model' : 'Run quick action'
+  const commandTitle = isRunning
+    ? `${activePhase?.title ?? 'Agent'} running`
+    : workbenchOutput
+      ? 'Output ready'
+      : isOnline && selectedModel
+        ? 'Ready for local work'
+        : 'Waiting for model'
+  const commandState = isRunning
+    ? activePhase?.role ?? 'Agent'
+    : completedSteps === agentPhases.length
+      ? 'Complete'
+      : `${completedSteps}/${agentPhases.length} phases`
+  const latestRunLabel = history[0]
+    ? new Date(history[0].createdAt).toLocaleDateString()
+    : 'No saved runs'
 
   const appendConsole = (message: string) => {
     setConsoleLines((current) =>
@@ -1042,6 +1102,14 @@ function App() {
           </div>
         </div>
         <div className="topbar-actions">
+          <div className="topbar-chip" title={selectedModel || 'No local model selected'}>
+            <Cpu size={15} aria-hidden="true" />
+            <span>{selectedModel || 'No model'}</span>
+          </div>
+          <div className="topbar-chip">
+            <Gauge size={15} aria-hidden="true" />
+            <span>{commandState}</span>
+          </div>
           <div className={`status-pill status-${connection}`}>
             {connection === 'checking' ? (
               <Loader2 size={15} aria-hidden="true" />
@@ -1064,6 +1132,34 @@ function App() {
       </header>
 
       <main className="workspace">
+        <section
+          className={`command-strip command-strip-${connection}`}
+          aria-label="Run cockpit"
+          style={{ '--run-progress': `${progressPercent}%` } as CSSProperties}
+        >
+          <div className="command-strip-main">
+            <p className="eyebrow">Run cockpit</p>
+            <h2>{commandTitle}</h2>
+          </div>
+          <div className="command-metrics">
+            <div className="command-metric">
+              <span>Model</span>
+              <strong>{selectedModel || 'Select one'}</strong>
+            </div>
+            <div className="command-metric">
+              <span>Progress</span>
+              <strong>{progressPercent}%</strong>
+            </div>
+            <div className="command-metric">
+              <span>Saved</span>
+              <strong>{latestRunLabel}</strong>
+            </div>
+          </div>
+          <div className="command-progress-track" aria-hidden="true">
+            <span></span>
+          </div>
+        </section>
+
         <aside className="control-panel">
           <section className="panel-section">
             <div className="section-title">
@@ -1092,6 +1188,26 @@ function App() {
                 {completedSteps}/{agentPhases.length} phases
               </span>
             </div>
+            <div className="readiness-list" aria-label="Run readiness">
+              <div className={`readiness-item readiness-${connection}`}>
+                <span>Ollama</span>
+                <strong>
+                  {connection === 'checking'
+                    ? 'Checking'
+                    : isOnline
+                      ? 'Online'
+                      : 'Offline'}
+                </strong>
+              </div>
+              <div className={`readiness-item ${selectedModel ? 'readiness-online' : 'readiness-offline'}`}>
+                <span>Model</span>
+                <strong>{selectedModel ? 'Selected' : 'Required'}</strong>
+              </div>
+              <div className={`readiness-item ${goalCharacterCount > 0 ? 'readiness-online' : 'readiness-offline'}`}>
+                <span>Goal</span>
+                <strong>{goalCharacterCount > 0 ? 'Ready' : 'Empty'}</strong>
+              </div>
+            </div>
           </section>
 
           <section className="panel-section">
@@ -1105,19 +1221,23 @@ function App() {
               aria-label="Agent goal"
               onChange={(event) => setObjective(event.target.value)}
             />
+            <div className="field-meta">
+              <span>{goalCharacterCount.toLocaleString()} chars</span>
+              <span>{goalCharacterCount > 0 ? 'Ready' : 'Needs goal'}</span>
+            </div>
             <div className="button-row">
               <button
-                className="primary-button"
+                className={`primary-button ${isRunning ? 'is-loading' : ''}`}
                 type="button"
                 onClick={runAgent}
-                disabled={isRunning}
+                disabled={runButtonDisabled}
               >
                 {isRunning ? (
                   <Loader2 size={17} aria-hidden="true" />
                 ) : (
                   <Play size={17} aria-hidden="true" />
                 )}
-                <span>{isRunning ? 'Running' : 'Run agent'}</span>
+                <span>{runButtonLabel}</span>
               </button>
               {isRunning ? (
                 <button className="danger-button" type="button" onClick={stopActiveRun}>
@@ -1153,7 +1273,10 @@ function App() {
                     onClick={() => loadTemplate(template)}
                   >
                     <Icon size={17} aria-hidden="true" />
-                    <span>{template.title}</span>
+                    <span>
+                      <strong>{template.title}</strong>
+                      <small>{template.objective}</small>
+                    </span>
                   </button>
                 )
               })}
@@ -1167,11 +1290,17 @@ function App() {
               <p className="eyebrow">Agent loop</p>
               <h2>Five local model passes</h2>
             </div>
-            <button className="ghost-button" type="button" onClick={exportLatestRun}>
-              <Download size={17} aria-hidden="true" />
-              <span>Export</span>
-            </button>
+            <div className="canvas-toolbar-actions">
+              <span className={`phase-chip phase-chip-${activeStep?.status ?? 'idle'}`}>
+                {isRunning ? activePhase?.title ?? 'Running' : commandState}
+              </span>
+              <button className="ghost-button" type="button" onClick={exportLatestRun}>
+                <Download size={17} aria-hidden="true" />
+                <span>Export</span>
+              </button>
+            </div>
           </div>
+          <PhaseProgressRail steps={steps} />
           <div className="flow-shell">
             <ReactFlow
               nodes={nodes}
@@ -1212,6 +1341,10 @@ function App() {
               aria-label="Source material"
               onChange={(event) => setSourceText(event.target.value)}
             />
+            <div className="field-meta">
+              <span>{sourceCharacterCount.toLocaleString()} chars</span>
+              <span>{quickTaskLabels[quickTask]}</span>
+            </div>
             <div className="quick-actions">
               {(Object.keys(quickTaskLabels) as QuickTask[]).map((task) => (
                 <button
@@ -1226,13 +1359,13 @@ function App() {
               ))}
             </div>
             <button
-              className="primary-button full-width"
+              className={`primary-button full-width ${isRunning ? 'is-loading' : ''}`}
               type="button"
               onClick={runQuickTask}
-              disabled={isRunning}
+              disabled={quickActionDisabled}
             >
               <Sparkles size={17} aria-hidden="true" />
-              <span>Run quick action</span>
+              <span>{quickActionLabel}</span>
             </button>
           </section>
 
