@@ -1,4 +1,12 @@
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ChangeEvent,
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Background,
   Controls,
@@ -18,11 +26,15 @@ import {
   ClipboardList,
   Copy,
   Cpu,
+  Database,
   Download,
+  Eye,
   ExternalLink,
   FileText,
   Gauge,
   GitBranch,
+  HardDrive,
+  History,
   Layers3,
   Loader2,
   Maximize2,
@@ -32,11 +44,14 @@ import {
   Plus,
   RefreshCcw,
   SearchCheck,
+  Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Square,
   SquareTerminal,
   Trash2,
+  Upload,
   Wrench,
   Workflow,
   Zap,
@@ -55,6 +70,7 @@ import {
 
 type ConnectionState = 'checking' | 'online' | 'offline'
 type PhaseStatus = 'idle' | 'active' | 'done' | 'error'
+type AppView = 'board' | 'settings'
 
 type AgentPhase = {
   id: string
@@ -127,11 +143,29 @@ type Prerequisite = {
   statusLabel: string
 }
 
+type AppSettings = {
+  autoSelectModel: boolean
+  contextTokens: number
+  defaultWorkbenchScale: number
+  matrixRain: boolean
+  requestTimeoutSeconds: number
+  saveRunHistory: boolean
+  startWorkbenchExpanded: boolean
+  temperature: number
+  historyLimit: number
+}
+
+type GenerationOptions = Pick<
+  AppSettings,
+  'contextTokens' | 'requestTimeoutSeconds' | 'temperature'
+>
+
 type WorkbenchPhaseId = 'final' | string
 
 type AgentWorkbenchWindowProps = {
   isExpanded: boolean
   isThinking: boolean
+  matrixRain: boolean
   onScaleChange: (scale: number) => void
   onSelectPhase: (phaseId: WorkbenchPhaseId) => void
   onToggleExpanded: () => void
@@ -260,8 +294,19 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 
 const historyStorageKey = 'ollama-agent-board:runs'
 const selectedModelStorageKey = 'ollama-agent-board:selected-model'
+const settingsStorageKey = 'ollama-agent-board:settings'
 const modelRefreshTimeoutMs = 10000
-const generationTimeoutMs = 180000
+const defaultAppSettings: AppSettings = {
+  autoSelectModel: true,
+  contextTokens: 4096,
+  defaultWorkbenchScale: 1,
+  historyLimit: 8,
+  matrixRain: true,
+  requestTimeoutSeconds: 180,
+  saveRunHistory: true,
+  startWorkbenchExpanded: false,
+  temperature: 0.35,
+}
 
 function createInitialSteps(): AgentStep[] {
   return agentPhases.map((phase) => ({
@@ -307,6 +352,81 @@ function loadPreferredModel(): string {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+
+  return Math.min(max, Math.max(min, parsed))
+}
+
+function sanitizeSettings(value: unknown): AppSettings {
+  const candidate = isRecord(value) ? value : {}
+  const contextTokens = Math.round(
+    clampNumber(candidate.contextTokens, defaultAppSettings.contextTokens, 1024, 32768),
+  )
+  const historyLimit = Math.round(
+    clampNumber(candidate.historyLimit, defaultAppSettings.historyLimit, 1, 30),
+  )
+  const requestTimeoutSeconds = Math.round(
+    clampNumber(
+      candidate.requestTimeoutSeconds,
+      defaultAppSettings.requestTimeoutSeconds,
+      30,
+      600,
+    ),
+  )
+
+  return {
+    autoSelectModel:
+      typeof candidate.autoSelectModel === 'boolean'
+        ? candidate.autoSelectModel
+        : defaultAppSettings.autoSelectModel,
+    contextTokens,
+    defaultWorkbenchScale: clampNumber(
+      candidate.defaultWorkbenchScale,
+      defaultAppSettings.defaultWorkbenchScale,
+      0.82,
+      1.28,
+    ),
+    historyLimit,
+    matrixRain:
+      typeof candidate.matrixRain === 'boolean'
+        ? candidate.matrixRain
+        : defaultAppSettings.matrixRain,
+    requestTimeoutSeconds,
+    saveRunHistory:
+      typeof candidate.saveRunHistory === 'boolean'
+        ? candidate.saveRunHistory
+        : defaultAppSettings.saveRunHistory,
+    startWorkbenchExpanded:
+      typeof candidate.startWorkbenchExpanded === 'boolean'
+        ? candidate.startWorkbenchExpanded
+        : defaultAppSettings.startWorkbenchExpanded,
+    temperature: clampNumber(
+      candidate.temperature,
+      defaultAppSettings.temperature,
+      0,
+      1,
+    ),
+  }
+}
+
+function loadSettings(): AppSettings {
+  try {
+    const stored = localStorage.getItem(settingsStorageKey)
+    return sanitizeSettings(stored ? JSON.parse(stored) : defaultAppSettings)
+  } catch {
+    return defaultAppSettings
+  }
+}
+
 function saveStoredRuns(history: SavedRun[]): boolean {
   try {
     localStorage.setItem(historyStorageKey, JSON.stringify(history))
@@ -325,6 +445,15 @@ function savePreferredModel(model: string): void {
     }
   } catch {
     // Browser privacy modes can disable localStorage. The app still works without it.
+  }
+}
+
+function saveSettings(settings: AppSettings): boolean {
+  try {
+    localStorage.setItem(settingsStorageKey, JSON.stringify(settings))
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -458,6 +587,7 @@ async function fetchOllamaJson<T>(
 async function generateWithOllama(
   model: string,
   prompt: string,
+  generationOptions: GenerationOptions,
   signal?: AbortSignal,
 ): Promise<string> {
   const data = await fetchOllamaJson<GenerateResponse>(
@@ -472,12 +602,12 @@ async function generateWithOllama(
         prompt,
         stream: false,
         options: {
-          temperature: 0.35,
-          num_ctx: 4096,
+          temperature: generationOptions.temperature,
+          num_ctx: generationOptions.contextTokens,
         },
       }),
     },
-    generationTimeoutMs,
+    generationOptions.requestTimeoutSeconds * 1000,
     signal,
   )
 
@@ -506,6 +636,18 @@ function createRunMarkdown(run: SavedRun): string {
     run.output,
     '',
   ].join('\n')
+}
+
+function downloadTextFile(fileName: string, contents: string, type: string): void {
+  const blob = new Blob([contents], {
+    type,
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function composeAgentOutput(steps: AgentStep[]): string {
@@ -612,6 +754,7 @@ function MatrixRain() {
 function AgentWorkbenchWindow({
   isExpanded,
   isThinking,
+  matrixRain,
   onScaleChange,
   onSelectPhase,
   onToggleExpanded,
@@ -675,7 +818,7 @@ function AgentWorkbenchWindow({
       style={{ '--workbench-scale': scale } as CSSProperties}
       aria-live="polite"
     >
-      <MatrixRain />
+      {matrixRain ? <MatrixRain /> : null}
       <div className="workbench-content">
         <header className="workbench-header">
           <div className="workbench-title-block">
@@ -787,8 +930,11 @@ const nodeTypes = {
 }
 
 function App() {
+  const initialSettings = useMemo(loadSettings, [])
   const [models, setModels] = useState<OllamaModel[]>([])
   const [selectedModel, setSelectedModel] = useState(loadPreferredModel)
+  const [settings, setSettings] = useState(initialSettings)
+  const [activeView, setActiveView] = useState<AppView>('board')
   const [connection, setConnection] = useState<ConnectionState>('checking')
   const [objective, setObjective] = useState(defaultObjective)
   const [sourceText, setSourceText] = useState(sampleText)
@@ -803,10 +949,16 @@ function App() {
   const [isAgentThinking, setIsAgentThinking] = useState(false)
   const [selectedWorkbenchPhaseId, setSelectedWorkbenchPhaseId] =
     useState<WorkbenchPhaseId>('final')
-  const [workbenchScale, setWorkbenchScale] = useState(1)
-  const [isWorkbenchExpanded, setIsWorkbenchExpanded] = useState(false)
+  const [workbenchScale, setWorkbenchScale] = useState(
+    initialSettings.defaultWorkbenchScale,
+  )
+  const [isWorkbenchExpanded, setIsWorkbenchExpanded] = useState(
+    initialSettings.startWorkbenchExpanded,
+  )
   const [copiedSetupCommand, setCopiedSetupCommand] = useState('')
+  const [copiedSettingsAction, setCopiedSettingsAction] = useState('')
   const activeRunController = useRef<AbortController | null>(null)
+  const settingsFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const activeModel = models.find((model) => model.name === selectedModel)
   const completedSteps = steps.filter((step) => step.status === 'done').length
@@ -824,21 +976,56 @@ function App() {
   const quickActionDisabled = isRunning || !selectedModel
   const runButtonLabel = !selectedModel ? 'Model required' : isRunning ? 'Running' : 'Run agent'
   const quickActionLabel = !selectedModel ? 'Choose model' : 'Run quick action'
-  const commandTitle = isRunning
+  const boardCommandTitle = isRunning
     ? `${activePhase?.title ?? 'Agent'} running`
     : workbenchOutput
       ? 'Output ready'
       : isOnline && selectedModel
         ? 'Ready for local work'
         : 'Waiting for model'
-  const commandState = isRunning
-    ? activePhase?.role ?? 'Agent'
-    : completedSteps === agentPhases.length
-      ? 'Complete'
-      : `${completedSteps}/${agentPhases.length} phases`
+  const commandTitle =
+    activeView === 'settings' ? 'Settings and local controls' : boardCommandTitle
+  const commandState =
+    activeView === 'settings'
+      ? `${settings.historyLimit} run memory`
+      : isRunning
+        ? activePhase?.role ?? 'Agent'
+        : completedSteps === agentPhases.length
+          ? 'Complete'
+          : `${completedSteps}/${agentPhases.length} phases`
   const latestRunLabel = history[0]
     ? new Date(history[0].createdAt).toLocaleDateString()
     : 'No saved runs'
+  const commandMetrics =
+    activeView === 'settings'
+      ? [
+          {
+            label: 'Temp',
+            value: settings.temperature.toFixed(2),
+          },
+          {
+            label: 'Context',
+            value: settings.contextTokens.toLocaleString(),
+          },
+          {
+            label: 'Timeout',
+            value: `${settings.requestTimeoutSeconds}s`,
+          },
+        ]
+      : [
+          {
+            label: 'Model',
+            value: selectedModel || 'Select one',
+          },
+          {
+            label: 'Progress',
+            value: `${progressPercent}%`,
+          },
+          {
+            label: 'Saved',
+            value: latestRunLabel,
+          },
+        ]
   const prerequisites = useMemo<Prerequisite[]>(
     () => [
       {
@@ -895,10 +1082,14 @@ function App() {
     [connection, isOnline, selectedModel],
   )
 
-  const appendConsole = (message: string) => {
+  const appendConsole = useCallback((message: string) => {
     setConsoleLines((current) =>
       [`${timeFormatter.format(new Date())} - ${message}`, ...current].slice(0, 10),
     )
+  }, [])
+
+  const updateSettings = (patch: Partial<AppSettings>) => {
+    setSettings((current) => sanitizeSettings({ ...current, ...patch }))
   }
 
   const copySetupCommand = async (item: Prerequisite) => {
@@ -917,7 +1108,7 @@ function App() {
     }
   }
 
-  const refreshModels = async () => {
+  const refreshModels = useCallback(async () => {
     setConnection('checking')
     try {
       const nextModels = await fetchOllamaModels()
@@ -929,10 +1120,10 @@ function App() {
 
         const preferredModel = loadPreferredModel()
         if (nextModels.some((model) => model.name === preferredModel)) {
-          return preferredModel
-        }
+        return preferredModel
+      }
 
-        return nextModels[0]?.name || ''
+        return settings.autoSelectModel ? nextModels[0]?.name || '' : ''
       })
       setConnection(nextModels.length > 0 ? 'online' : 'offline')
       appendConsole(
@@ -946,21 +1137,41 @@ function App() {
       setConnection('offline')
       appendConsole('Ollama is offline or not reachable at localhost:11434.')
     }
-  }
+  }, [appendConsole, settings.autoSelectModel])
 
   useEffect(() => {
     void refreshModels()
-  }, [])
+  }, [refreshModels])
 
   useEffect(() => {
+    if (!settings.saveRunHistory) {
+      try {
+        localStorage.removeItem(historyStorageKey)
+      } catch {
+        // Storage can be unavailable in privacy modes.
+      }
+      return
+    }
+
+    if (history.length > settings.historyLimit) {
+      setHistory((current) => current.slice(0, settings.historyLimit))
+      return
+    }
+
     if (!saveStoredRuns(history)) {
       appendConsole('Browser storage is unavailable; run history was not saved.')
     }
-  }, [history])
+  }, [appendConsole, history, settings.historyLimit, settings.saveRunHistory])
 
   useEffect(() => {
     savePreferredModel(selectedModel)
   }, [selectedModel])
+
+  useEffect(() => {
+    if (!saveSettings(settings)) {
+      appendConsole('Browser storage is unavailable; settings were not saved.')
+    }
+  }, [appendConsole, settings])
 
   const nodes = useMemo<AgentNodeType[]>(
     () =>
@@ -1044,6 +1255,7 @@ function App() {
         const result = await generateWithOllama(
           selectedModel,
           buildPhasePrompt(phase, objective, sourceText, accumulated),
+          settings,
           controller.signal,
         )
         accumulated = `${accumulated}\n\n## ${phase.title}\n${result}`.trim()
@@ -1062,20 +1274,26 @@ function App() {
         )
       }
 
-      setHistory((current) =>
-        [
-          {
-            id: crypto.randomUUID(),
-            createdAt: runStartedAt,
-            objective,
-            model: selectedModel,
-            output: accumulated,
-          },
-          ...current,
-        ].slice(0, 8),
-      )
+      if (settings.saveRunHistory) {
+        setHistory((current) =>
+          [
+            {
+              id: crypto.randomUUID(),
+              createdAt: runStartedAt,
+              objective,
+              model: selectedModel,
+              output: accumulated,
+            },
+            ...current,
+          ].slice(0, settings.historyLimit),
+        )
+      }
       setSelectedWorkbenchPhaseId('final')
-      appendConsole('Agent run completed and saved locally.')
+      appendConsole(
+        settings.saveRunHistory
+          ? 'Agent run completed and saved locally.'
+          : 'Agent run completed. History saving is off.',
+      )
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'The local agent run failed.'
@@ -1133,6 +1351,7 @@ function App() {
       const result = await generateWithOllama(
         selectedModel,
         buildQuickPrompt(quickTask, sourceText, objective),
+        settings,
         controller.signal,
       )
       setQuickOutput(result)
@@ -1199,21 +1418,127 @@ function App() {
           .join('\n')
       : createRunMarkdown(latestRun as SavedRun)
 
-    const blob = new Blob([markdown], {
-      type: 'text/markdown;charset=utf-8',
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'ollama-agent-run.md'
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadTextFile('ollama-agent-run.md', markdown, 'text/markdown;charset=utf-8')
     appendConsole('Markdown export created.')
   }
 
   const clearHistory = () => {
     setHistory([])
+    try {
+      localStorage.removeItem(historyStorageKey)
+    } catch {
+      // Storage can be unavailable in privacy modes.
+    }
     appendConsole('Run history cleared.')
+  }
+
+  const setRunHistoryEnabled = (enabled: boolean) => {
+    updateSettings({ saveRunHistory: enabled })
+
+    if (!enabled) {
+      clearHistory()
+      appendConsole('Run history saving turned off.')
+    } else {
+      appendConsole('Run history saving turned on.')
+    }
+  }
+
+  const resetSettings = () => {
+    setSettings(defaultAppSettings)
+    setWorkbenchScale(defaultAppSettings.defaultWorkbenchScale)
+    setIsWorkbenchExpanded(defaultAppSettings.startWorkbenchExpanded)
+    appendConsole('Settings reset.')
+  }
+
+  const exportSettings = () => {
+    downloadTextFile(
+      'ollama-agent-board-settings.json',
+      JSON.stringify(
+        {
+          app: 'ollama-agent-board',
+          exportedAt: new Date().toISOString(),
+          settings,
+        },
+        null,
+        2,
+      ),
+      'application/json;charset=utf-8',
+    )
+    appendConsole('Settings export created.')
+  }
+
+  const importSettings = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) {
+      return
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown
+      const importedSettings =
+        isRecord(parsed) && 'settings' in parsed ? parsed.settings : parsed
+      const nextSettings = sanitizeSettings(importedSettings)
+      setSettings(nextSettings)
+      setWorkbenchScale(nextSettings.defaultWorkbenchScale)
+      setIsWorkbenchExpanded(nextSettings.startWorkbenchExpanded)
+      appendConsole('Settings imported.')
+    } catch {
+      appendConsole('Settings import failed. Choose a valid settings JSON file.')
+    }
+  }
+
+  const copyDiagnostics = async () => {
+    const diagnostics = [
+      'Ollama Agent Board diagnostics',
+      `Connection: ${connection}`,
+      `Selected model: ${selectedModel || 'none'}`,
+      `Models found: ${models.length}`,
+      `Temperature: ${settings.temperature.toFixed(2)}`,
+      `Context tokens: ${settings.contextTokens}`,
+      `Timeout seconds: ${settings.requestTimeoutSeconds}`,
+      `History: ${settings.saveRunHistory ? `${history.length}/${settings.historyLimit}` : 'off'}`,
+      `Workbench scale: ${Math.round(workbenchScale * 100)}%`,
+      `Matrix animation: ${settings.matrixRain ? 'on' : 'off'}`,
+    ].join('\n')
+
+    if (await copyTextToClipboard(diagnostics)) {
+      setCopiedSettingsAction('diagnostics')
+      window.setTimeout(() => {
+        setCopiedSettingsAction((current) =>
+          current === 'diagnostics' ? '' : current,
+        )
+      }, 1800)
+      appendConsole('Diagnostics copied.')
+    } else {
+      appendConsole('Diagnostics copy failed.')
+    }
+  }
+
+  const clearPreferredModel = () => {
+    setSelectedModel('')
+    try {
+      localStorage.removeItem(selectedModelStorageKey)
+    } catch {
+      // Storage can be unavailable in privacy modes.
+    }
+    appendConsole('Preferred model cleared.')
+  }
+
+  const clearLocalData = () => {
+    setHistory([])
+    setQuickOutput('')
+    setSteps(createInitialSteps())
+    setSelectedWorkbenchPhaseId('final')
+    try {
+      localStorage.removeItem(historyStorageKey)
+      localStorage.removeItem(selectedModelStorageKey)
+    } catch {
+      // Storage can be unavailable in privacy modes.
+    }
+    setSelectedModel('')
+    appendConsole('Local board data cleared.')
   }
 
   return (
@@ -1229,6 +1554,28 @@ function App() {
           </div>
         </div>
         <div className="topbar-actions">
+          <div className="view-tabs" role="tablist" aria-label="Main view">
+            <button
+              className={activeView === 'board' ? 'view-tab active' : 'view-tab'}
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'board'}
+              onClick={() => setActiveView('board')}
+            >
+              <Workflow size={15} aria-hidden="true" />
+              <span>Board</span>
+            </button>
+            <button
+              className={activeView === 'settings' ? 'view-tab active' : 'view-tab'}
+              type="button"
+              role="tab"
+              aria-selected={activeView === 'settings'}
+              onClick={() => setActiveView('settings')}
+            >
+              <Settings size={15} aria-hidden="true" />
+              <span>Settings</span>
+            </button>
+          </div>
           <div className="topbar-chip" title={selectedModel || 'No local model selected'}>
             <Cpu size={15} aria-hidden="true" />
             <span>{selectedModel || 'No model'}</span>
@@ -1258,7 +1605,7 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace">
+      <main className={activeView === 'settings' ? 'workspace settings-workspace' : 'workspace'}>
         <section
           className={`command-strip command-strip-${connection}`}
           aria-label="Run cockpit"
@@ -1269,24 +1616,384 @@ function App() {
             <h2>{commandTitle}</h2>
           </div>
           <div className="command-metrics">
-            <div className="command-metric">
-              <span>Model</span>
-              <strong>{selectedModel || 'Select one'}</strong>
-            </div>
-            <div className="command-metric">
-              <span>Progress</span>
-              <strong>{progressPercent}%</strong>
-            </div>
-            <div className="command-metric">
-              <span>Saved</span>
-              <strong>{latestRunLabel}</strong>
-            </div>
+            {commandMetrics.map((metric) => (
+              <div className="command-metric" key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </div>
+            ))}
           </div>
           <div className="command-progress-track" aria-hidden="true">
             <span></span>
           </div>
         </section>
 
+        {activeView === 'settings' ? (
+          <section className="settings-page" aria-label="Settings tab">
+            <aside className="panel-section settings-sidebar">
+              <div className="section-title">
+                <Settings size={18} aria-hidden="true" />
+                <h2>Settings</h2>
+              </div>
+              <div className="settings-status-list">
+                <div className="settings-status-item">
+                  <span>Ollama</span>
+                  <strong>{isOnline ? 'Online' : connection}</strong>
+                </div>
+                <div className="settings-status-item">
+                  <span>Models</span>
+                  <strong>{models.length}</strong>
+                </div>
+                <div className="settings-status-item">
+                  <span>Runs</span>
+                  <strong>
+                    {settings.saveRunHistory ? `${history.length}/${settings.historyLimit}` : 'Off'}
+                  </strong>
+                </div>
+              </div>
+              <div className="settings-nav" aria-label="Settings sections">
+                <a href="#runtime-settings">
+                  <SlidersHorizontal size={15} aria-hidden="true" />
+                  <span>Runtime</span>
+                </a>
+                <a href="#agent-memory-settings">
+                  <History size={15} aria-hidden="true" />
+                  <span>Agent memory</span>
+                </a>
+                <a href="#workbench-settings">
+                  <Eye size={15} aria-hidden="true" />
+                  <span>Workbench</span>
+                </a>
+                <a href="#data-settings">
+                  <Database size={15} aria-hidden="true" />
+                  <span>Data</span>
+                </a>
+              </div>
+            </aside>
+
+            <section className="settings-content">
+              <section className="settings-panel" id="runtime-settings">
+                <div className="settings-panel-header">
+                  <div>
+                    <p className="eyebrow">Runtime</p>
+                    <h2>Model and generation</h2>
+                  </div>
+                  <button className="ghost-button" type="button" onClick={refreshModels}>
+                    <RefreshCcw size={16} aria-hidden="true" />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                <div className="settings-grid">
+                  <label className="settings-field">
+                    <span>Default model</span>
+                    <select
+                      value={selectedModel}
+                      onChange={(event) => setSelectedModel(event.target.value)}
+                      disabled={models.length === 0}
+                    >
+                      {models.length === 0 ? (
+                        <option>No local models found</option>
+                      ) : (
+                        models.map((model) => (
+                          <option key={model.name} value={model.name}>
+                            {model.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={settings.autoSelectModel}
+                      onChange={(event) =>
+                        updateSettings({ autoSelectModel: event.target.checked })
+                      }
+                    />
+                    <span className="toggle-switch" aria-hidden="true"></span>
+                    <span>
+                      <strong>Auto-select model</strong>
+                      <small>Use the first local model when no preference is saved.</small>
+                    </span>
+                  </label>
+
+                  <label className="settings-field">
+                    <span>Temperature</span>
+                    <div className="settings-range-row">
+                      <input
+                        className="settings-range"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={settings.temperature}
+                        onChange={(event) =>
+                          updateSettings({ temperature: Number(event.target.value) })
+                        }
+                      />
+                      <strong>{settings.temperature.toFixed(2)}</strong>
+                    </div>
+                  </label>
+
+                  <label className="settings-field">
+                    <span>Context window</span>
+                    <select
+                      value={settings.contextTokens}
+                      onChange={(event) =>
+                        updateSettings({ contextTokens: Number(event.target.value) })
+                      }
+                    >
+                      {[2048, 4096, 8192, 16384, 32768].map((size) => (
+                        <option key={size} value={size}>
+                          {size.toLocaleString()} tokens
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="settings-field">
+                    <span>Request timeout</span>
+                    <div className="settings-range-row">
+                      <input
+                        className="settings-range"
+                        type="range"
+                        min="30"
+                        max="600"
+                        step="30"
+                        value={settings.requestTimeoutSeconds}
+                        onChange={(event) =>
+                          updateSettings({
+                            requestTimeoutSeconds: Number(event.target.value),
+                          })
+                        }
+                      />
+                      <strong>{settings.requestTimeoutSeconds}s</strong>
+                    </div>
+                  </label>
+
+                  <div className="settings-readonly">
+                    <span>Proxy route</span>
+                    <code>/api/ollama</code>
+                  </div>
+                </div>
+              </section>
+
+              <section className="settings-panel" id="agent-memory-settings">
+                <div className="settings-panel-header">
+                  <div>
+                    <p className="eyebrow">Agent memory</p>
+                    <h2>Run history</h2>
+                  </div>
+                  <History size={20} aria-hidden="true" />
+                </div>
+
+                <div className="settings-grid">
+                  <label className="settings-toggle settings-toggle-wide">
+                    <input
+                      type="checkbox"
+                      checked={settings.saveRunHistory}
+                      onChange={(event) => setRunHistoryEnabled(event.target.checked)}
+                    />
+                    <span className="toggle-switch" aria-hidden="true"></span>
+                    <span>
+                      <strong>Save run history</strong>
+                      <small>Store recent outputs in this browser only.</small>
+                    </span>
+                  </label>
+
+                  <label className="settings-field">
+                    <span>History limit</span>
+                    <select
+                      value={settings.historyLimit}
+                      disabled={!settings.saveRunHistory}
+                      onChange={(event) =>
+                        updateSettings({ historyLimit: Number(event.target.value) })
+                      }
+                    >
+                      {[4, 8, 12, 20, 30].map((limit) => (
+                        <option key={limit} value={limit}>
+                          {limit} runs
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="settings-stat">
+                    <span>Stored runs</span>
+                    <strong>{history.length}</strong>
+                  </div>
+
+                  <div className="settings-stat">
+                    <span>Latest run</span>
+                    <strong>{latestRunLabel}</strong>
+                  </div>
+                </div>
+
+                <div className="settings-actions">
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={exportLatestRun}
+                    disabled={!workbenchOutput.trim() && history.length === 0}
+                  >
+                    <Download size={16} aria-hidden="true" />
+                    <span>Export output</span>
+                  </button>
+                  <button
+                    className="danger-button"
+                    type="button"
+                    onClick={clearHistory}
+                    disabled={history.length === 0}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                    <span>Clear runs</span>
+                  </button>
+                </div>
+              </section>
+
+              <section className="settings-panel" id="workbench-settings">
+                <div className="settings-panel-header">
+                  <div>
+                    <p className="eyebrow">Workbench</p>
+                    <h2>Display and motion</h2>
+                  </div>
+                  <Eye size={20} aria-hidden="true" />
+                </div>
+
+                <div className="settings-grid">
+                  <label className="settings-toggle settings-toggle-wide">
+                    <input
+                      type="checkbox"
+                      checked={settings.matrixRain}
+                      onChange={(event) =>
+                        updateSettings({ matrixRain: event.target.checked })
+                      }
+                    />
+                    <span className="toggle-switch" aria-hidden="true"></span>
+                    <span>
+                      <strong>Matrix thinking animation</strong>
+                      <small>Show neon code rain while a local agent is working.</small>
+                    </span>
+                  </label>
+
+                  <label className="settings-toggle settings-toggle-wide">
+                    <input
+                      type="checkbox"
+                      checked={settings.startWorkbenchExpanded}
+                      onChange={(event) => {
+                        updateSettings({ startWorkbenchExpanded: event.target.checked })
+                        setIsWorkbenchExpanded(event.target.checked)
+                      }}
+                    />
+                    <span className="toggle-switch" aria-hidden="true"></span>
+                    <span>
+                      <strong>Expanded workbench</strong>
+                      <small>Keep the main output window expanded by default.</small>
+                    </span>
+                  </label>
+
+                  <label className="settings-field settings-field-wide">
+                    <span>Default workbench scale</span>
+                    <div className="settings-range-row">
+                      <input
+                        className="settings-range"
+                        type="range"
+                        min="82"
+                        max="128"
+                        value={Math.round(settings.defaultWorkbenchScale * 100)}
+                        onChange={(event) => {
+                          const nextScale = Number(event.target.value) / 100
+                          updateSettings({ defaultWorkbenchScale: nextScale })
+                          setWorkbenchScale(nextScale)
+                        }}
+                      />
+                      <strong>{Math.round(settings.defaultWorkbenchScale * 100)}%</strong>
+                    </div>
+                  </label>
+
+                  <div className="settings-stat">
+                    <span>Current scale</span>
+                    <strong>{Math.round(workbenchScale * 100)}%</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="settings-panel" id="data-settings">
+                <div className="settings-panel-header">
+                  <div>
+                    <p className="eyebrow">Data</p>
+                    <h2>Local storage and setup</h2>
+                  </div>
+                  <HardDrive size={20} aria-hidden="true" />
+                </div>
+
+                <div className="settings-actions settings-actions-grid">
+                  <button className="ghost-button" type="button" onClick={exportSettings}>
+                    <Download size={16} aria-hidden="true" />
+                    <span>Export settings</span>
+                  </button>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() => settingsFileInputRef.current?.click()}
+                  >
+                    <Upload size={16} aria-hidden="true" />
+                    <span>Import settings</span>
+                  </button>
+                  <button className="ghost-button" type="button" onClick={copyDiagnostics}>
+                    <Copy size={16} aria-hidden="true" />
+                    <span>
+                      {copiedSettingsAction === 'diagnostics'
+                        ? 'Copied'
+                        : 'Copy diagnostics'}
+                    </span>
+                  </button>
+                  <button className="ghost-button" type="button" onClick={clearPreferredModel}>
+                    <Cpu size={16} aria-hidden="true" />
+                    <span>Clear model</span>
+                  </button>
+                  <button className="ghost-button" type="button" onClick={resetSettings}>
+                    <RefreshCcw size={16} aria-hidden="true" />
+                    <span>Reset settings</span>
+                  </button>
+                  <button className="danger-button" type="button" onClick={clearLocalData}>
+                    <Trash2 size={16} aria-hidden="true" />
+                    <span>Clear local data</span>
+                  </button>
+                </div>
+
+                <input
+                  ref={settingsFileInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={importSettings}
+                />
+
+                <div className="settings-link-grid">
+                  {prerequisites.map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <a
+                        href={item.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        key={item.id}
+                      >
+                        <Icon size={16} aria-hidden="true" />
+                        <span>{item.title}</span>
+                        <ExternalLink size={13} aria-hidden="true" />
+                      </a>
+                    )
+                  })}
+                </div>
+              </section>
+            </section>
+          </section>
+        ) : (
+          <>
         <aside className="control-panel">
           <section className="panel-section">
             <div className="section-title">
@@ -1501,6 +2208,7 @@ function App() {
             <AgentWorkbenchWindow
               isExpanded={isWorkbenchExpanded}
               isThinking={isAgentThinking}
+              matrixRain={settings.matrixRain}
               onScaleChange={setWorkbenchScale}
               onSelectPhase={setSelectedWorkbenchPhaseId}
               onToggleExpanded={() => setIsWorkbenchExpanded((current) => !current)}
@@ -1616,6 +2324,8 @@ function App() {
             )}
           </section>
         </aside>
+          </>
+        )}
       </main>
     </div>
   )
