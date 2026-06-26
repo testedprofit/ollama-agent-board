@@ -20,6 +20,7 @@
 .brand-block,
 .topbar-actions,
 .section-title,
+.section-title-label,
 .button-row,
 .model-meta,
 .quick-actions {
@@ -80,8 +81,10 @@ h2 {
 
 .status-pill,
 .icon-button,
+.mini-icon-button,
 .primary-button,
 .ghost-button,
+.danger-button,
 .template-button,
 .mode-button,
 .run-button {
@@ -149,6 +152,15 @@ h2 {
   margin-bottom: 12px;
 }
 
+.section-title-with-action {
+  justify-content: space-between;
+}
+
+.section-title-label {
+  gap: 8px;
+  min-width: 0;
+}
+
 .section-title svg {
   color: var(--accent);
 }
@@ -209,8 +221,10 @@ button:disabled {
 }
 
 .icon-button,
+.mini-icon-button,
 .primary-button,
 .ghost-button,
+.danger-button,
 .template-button,
 .mode-button {
   min-height: 38px;
@@ -221,6 +235,33 @@ button:disabled {
 .ghost-button {
   background: #ffffff;
   color: var(--ink);
+}
+
+.mini-icon-button {
+  background: #ffffff;
+  color: var(--muted);
+  height: 30px;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0;
+  width: 30px;
+}
+
+.mini-icon-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.danger-button {
+  background: #fff5f2;
+  border-color: rgba(216, 90, 58, 0.42);
+  color: #a53f28;
+  font-weight: 800;
+}
+
+.danger-button:hover {
+  background: #ffe8e1;
+  border-color: rgba(216, 90, 58, 0.7);
 }
 
 .primary-button {
