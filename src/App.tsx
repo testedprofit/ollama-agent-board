@@ -16,12 +16,17 @@ import {
   Brain,
   CheckCircle2,
   ClipboardList,
+  Copy,
   Cpu,
   Download,
   FileText,
   Layers3,
   Loader2,
+  Maximize2,
+  Minimize2,
+  Minus,
   Play,
+  Plus,
   RefreshCcw,
   SearchCheck,
   ShieldCheck,
@@ -89,6 +94,20 @@ type Template = {
   objective: string
   sourceText: string
   icon: LucideIcon
+}
+
+type WorkbenchPhaseId = 'final' | string
+
+type AgentWorkbenchWindowProps = {
+  isExpanded: boolean
+  isThinking: boolean
+  onScaleChange: (scale: number) => void
+  onSelectPhase: (phaseId: WorkbenchPhaseId) => void
+  onToggleExpanded: () => void
+  output: string
+  scale: number
+  selectedPhaseId: WorkbenchPhaseId
+  steps: AgentStep[]
 }
 
 const matrixStreams = [
@@ -321,6 +340,16 @@ function createRunMarkdown(run: SavedRun): string {
   ].join('\n')
 }
 
+function composeAgentOutput(steps: AgentStep[]): string {
+  return steps
+    .filter((step) => step.result)
+    .map((step) => {
+      const phase = agentPhases.find((candidate) => candidate.id === step.id)
+      return `## ${phase?.title ?? step.id}\n${step.result}`
+    })
+    .join('\n\n')
+}
+
 function AgentNode({ data }: NodeProps<AgentNodeType>) {
   const Icon = data.icon
   const statusLabel =
@@ -354,9 +383,9 @@ function AgentNode({ data }: NodeProps<AgentNodeType>) {
   )
 }
 
-function MatrixThinkingOverlay() {
+function MatrixRain() {
   return (
-    <div className="matrix-thinking-overlay" aria-live="polite" aria-label="Agent is thinking">
+    <>
       <div className="matrix-grid-glow" aria-hidden="true"></div>
       <div className="matrix-rain" aria-hidden="true">
         {Array.from({ length: 38 }, (_, index) => {
@@ -379,11 +408,171 @@ function MatrixThinkingOverlay() {
           )
         })}
       </div>
-      <div className="matrix-thinking-label">
-        <span>AGENT IS THINKING</span>
-        <small>local model running</small>
+    </>
+  )
+}
+
+function AgentWorkbenchWindow({
+  isExpanded,
+  isThinking,
+  onScaleChange,
+  onSelectPhase,
+  onToggleExpanded,
+  output,
+  scale,
+  selectedPhaseId,
+  steps,
+}: AgentWorkbenchWindowProps) {
+  const [copied, setCopied] = useState(false)
+  const activeStep = steps.find((step) => step.status === 'active')
+  const selectedStep =
+    selectedPhaseId === 'final'
+      ? undefined
+      : steps.find((step) => step.id === selectedPhaseId)
+  const selectedPhase =
+    selectedPhaseId === 'final'
+      ? undefined
+      : agentPhases.find((phase) => phase.id === selectedPhaseId)
+  const activePhase = activeStep
+    ? agentPhases.find((phase) => phase.id === activeStep.id)
+    : undefined
+  const completedCount = steps.filter((step) => step.status === 'done').length
+  const statusText = isThinking
+    ? 'AGENT IS THINKING'
+    : output
+      ? 'AGENT OUTPUT'
+      : 'AGENT WORKBENCH'
+  const selectedTitle =
+    selectedPhaseId === 'final' ? 'Final run' : selectedPhase?.title ?? 'Workbench'
+  const selectedSubtitle = isThinking
+    ? `${activePhase?.title ?? 'Agent'} is writing into the window`
+    : output
+      ? 'Run output is ready'
+      : 'Agents write here as they work'
+  const selectedOutput =
+    selectedPhaseId === 'final'
+      ? output || 'Run the agent and the completed output will appear here.'
+      : selectedStep?.result ||
+        (selectedStep?.status === 'active'
+          ? `${selectedPhase?.role ?? 'Agent'} is thinking through this phase.`
+          : selectedPhase?.prompt ?? 'Select an agent phase to inspect its output.')
+
+  const copyWorkbenchOutput = async () => {
+    await navigator.clipboard.writeText(selectedOutput)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1200)
+  }
+
+  const updateScale = (nextScale: number) => {
+    onScaleChange(Math.min(1.28, Math.max(0.82, nextScale)))
+  }
+
+  return (
+    <section
+      className={`agent-workbench-window ${isThinking ? 'agent-workbench-thinking' : ''} ${
+        isExpanded ? 'agent-workbench-expanded' : ''
+      }`}
+      style={{ '--workbench-scale': scale } as CSSProperties}
+      aria-live="polite"
+    >
+      <MatrixRain />
+      <div className="workbench-content">
+        <header className="workbench-header">
+          <div className="workbench-title-block">
+            <span className="workbench-live-dot" aria-hidden="true"></span>
+            <div>
+              <p className="eyebrow">{statusText}</p>
+              <h3>{selectedTitle}</h3>
+            </div>
+          </div>
+          <div className="workbench-tools">
+            <button
+              className="workbench-tool-button"
+              type="button"
+              onClick={copyWorkbenchOutput}
+              title="Copy output"
+            >
+              <Copy size={15} aria-hidden="true" />
+            </button>
+            <button
+              className="workbench-tool-button"
+              type="button"
+              onClick={() => updateScale(scale - 0.08)}
+              title="Scale down"
+            >
+              <Minus size={15} aria-hidden="true" />
+            </button>
+            <input
+              aria-label="Workbench scale"
+              className="workbench-scale"
+              type="range"
+              min="82"
+              max="128"
+              value={Math.round(scale * 100)}
+              onChange={(event) => updateScale(Number(event.target.value) / 100)}
+            />
+            <button
+              className="workbench-tool-button"
+              type="button"
+              onClick={() => updateScale(scale + 0.08)}
+              title="Scale up"
+            >
+              <Plus size={15} aria-hidden="true" />
+            </button>
+            <button
+              className="workbench-tool-button"
+              type="button"
+              onClick={onToggleExpanded}
+              title={isExpanded ? 'Restore window' : 'Expand window'}
+            >
+              {isExpanded ? (
+                <Minimize2 size={15} aria-hidden="true" />
+              ) : (
+                <Maximize2 size={15} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </header>
+
+        <div className="workbench-status-row">
+          <span>{selectedSubtitle}</span>
+          <span>
+            {completedCount}/{agentPhases.length} phases
+          </span>
+        </div>
+
+        <div className="workbench-phase-rail" aria-label="Agent phase output">
+          <button
+            className={selectedPhaseId === 'final' ? 'workbench-phase active' : 'workbench-phase'}
+            type="button"
+            onClick={() => onSelectPhase('final')}
+          >
+            Final
+          </button>
+          {agentPhases.map((phase) => {
+            const step = steps.find((candidate) => candidate.id === phase.id)
+            return (
+              <button
+                className={`workbench-phase workbench-phase-${step?.status ?? 'idle'} ${
+                  selectedPhaseId === phase.id ? 'active' : ''
+                }`}
+                type="button"
+                key={phase.id}
+                onClick={() => onSelectPhase(phase.id)}
+              >
+                {phase.title}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="workbench-output-window">
+          <pre>{selectedOutput}</pre>
+        </div>
+
+        {copied ? <span className="workbench-copy-note">Copied</span> : null}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -406,10 +595,16 @@ function App() {
   const [quickOutput, setQuickOutput] = useState('')
   const [isRunning, setIsRunning] = useState(false)
   const [isAgentThinking, setIsAgentThinking] = useState(false)
+  const [selectedWorkbenchPhaseId, setSelectedWorkbenchPhaseId] =
+    useState<WorkbenchPhaseId>('final')
+  const [workbenchScale, setWorkbenchScale] = useState(1)
+  const [isWorkbenchExpanded, setIsWorkbenchExpanded] = useState(false)
 
   const activeModel = models.find((model) => model.name === selectedModel)
   const completedSteps = steps.filter((step) => step.status === 'done').length
   const isOnline = connection === 'online'
+  const agentOutput = composeAgentOutput(steps)
+  const workbenchOutput = agentOutput || quickOutput
 
   const appendConsole = (message: string) => {
     setConsoleLines((current) =>
@@ -504,6 +699,7 @@ function App() {
 
     setIsRunning(true)
     setIsAgentThinking(true)
+    setSelectedWorkbenchPhaseId('intake')
     setSteps(createInitialSteps())
     setQuickOutput('')
     appendConsole(`Started local agent run on ${selectedModel}.`)
@@ -520,6 +716,7 @@ function App() {
           ),
         )
         appendConsole(`${phase.title} phase is running.`)
+        setSelectedWorkbenchPhaseId(phase.id)
 
         const result = await generateWithOllama(
           selectedModel,
@@ -553,6 +750,7 @@ function App() {
           ...current,
         ].slice(0, 8),
       )
+      setSelectedWorkbenchPhaseId('final')
       appendConsole('Agent run completed and saved locally.')
     } catch (error) {
       const message =
@@ -587,6 +785,7 @@ function App() {
         buildQuickPrompt(quickTask, sourceText, objective),
       )
       setQuickOutput(result)
+      setSelectedWorkbenchPhaseId('final')
       appendConsole(`${quickTaskLabels[quickTask]} quick action completed.`)
     } catch (error) {
       const message =
@@ -617,6 +816,7 @@ function App() {
       })),
     )
     setQuickOutput(demoOutput)
+    setSelectedWorkbenchPhaseId('final')
     appendConsole('Demo run loaded.')
   }
 
@@ -793,7 +993,17 @@ function App() {
               <Background gap={22} size={1} color="#cbd5e1" />
               <Controls showInteractive={false} />
             </ReactFlow>
-            {isAgentThinking ? <MatrixThinkingOverlay /> : null}
+            <AgentWorkbenchWindow
+              isExpanded={isWorkbenchExpanded}
+              isThinking={isAgentThinking}
+              onScaleChange={setWorkbenchScale}
+              onSelectPhase={setSelectedWorkbenchPhaseId}
+              onToggleExpanded={() => setIsWorkbenchExpanded((current) => !current)}
+              output={workbenchOutput}
+              scale={workbenchScale}
+              selectedPhaseId={selectedWorkbenchPhaseId}
+              steps={steps}
+            />
           </div>
         </section>
 
@@ -837,15 +1047,7 @@ function App() {
               <h2>Output</h2>
             </div>
             <div className="output-box">
-              {quickOutput ||
-                steps
-                  .filter((step) => step.result)
-                  .map((step) => {
-                    const phase = agentPhases.find((candidate) => candidate.id === step.id)
-                    return `${phase?.title ?? step.id}: ${step.result}`
-                  })
-                  .join('\n\n') ||
-                'Run the board or a quick action to generate local output.'}
+              {workbenchOutput || 'Run the board or a quick action to generate local output.'}
             </div>
           </section>
 
@@ -875,7 +1077,10 @@ function App() {
                     type="button"
                     className="run-button"
                     key={run.id}
-                    onClick={() => setQuickOutput(run.output)}
+                    onClick={() => {
+                      setQuickOutput(run.output)
+                      setSelectedWorkbenchPhaseId('final')
+                    }}
                   >
                     <strong>{run.objective}</strong>
                     <span>
