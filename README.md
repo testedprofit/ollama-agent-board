@@ -15,15 +15,32 @@ Everything runs locally. The browser app talks to Ollama through a local proxy p
 - Saves recent runs in browser storage, with a clear-history control.
 - Includes a hardened production server that serves the app and proxies only the Ollama routes it needs.
 
-## Requirements
+## Prerequisites
 
-- Node.js 20 or newer
-- Ollama running locally
-- At least one model pulled, for example:
+Use the in-app Setup panel, or install these directly:
+
+- [Ollama for Windows](https://ollama.com/download/windows) to run local models.
+- [Node.js](https://nodejs.org/en/download) 20 or newer to run the app from source.
+- [Git for Windows](https://git-scm.com/install/windows) to clone or contribute.
+- At least one Ollama model, for example:
 
 ```bash
 ollama pull llama3.2
 ```
+
+Open a new terminal after installing Ollama or Node.js so the commands are on your PATH.
+
+## Quick Windows setup
+
+```bash
+git clone https://github.com/testedprofit/ollama-agent-board.git
+cd ollama-agent-board
+npm install
+ollama pull llama3.2
+npm run dev
+```
+
+Keep Ollama running, then open `http://localhost:5173`.
 
 ## Run locally
 
@@ -33,6 +50,16 @@ npm run dev
 ```
 
 Open `http://localhost:5173`.
+
+If the app does not detect Ollama, run these checks:
+
+```bash
+ollama --version
+ollama list
+ollama serve
+```
+
+Then press Refresh in the app. If `ollama serve` says the address is already in use, Ollama is already running.
 
 ## Build and run the packaged app
 

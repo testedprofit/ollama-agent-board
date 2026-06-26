@@ -19,8 +19,10 @@ import {
   Copy,
   Cpu,
   Download,
+  ExternalLink,
   FileText,
   Gauge,
+  GitBranch,
   Layers3,
   Loader2,
   Maximize2,
@@ -35,6 +37,7 @@ import {
   Square,
   SquareTerminal,
   Trash2,
+  Wrench,
   Workflow,
   Zap,
   type LucideIcon,
@@ -109,6 +112,19 @@ type Template = {
   objective: string
   sourceText: string
   icon: LucideIcon
+}
+
+type Prerequisite = {
+  id: string
+  title: string
+  description: string
+  href: string
+  linkLabel: string
+  command?: string
+  commandLabel?: string
+  icon: LucideIcon
+  status: 'online' | 'offline' | 'checking' | 'neutral'
+  statusLabel: string
 }
 
 type WorkbenchPhaseId = 'final' | string
@@ -231,6 +247,12 @@ const templates: Template[] = [
   },
 ]
 
+const setupLinks = {
+  gitWindows: 'https://git-scm.com/install/windows',
+  nodeDownload: 'https://nodejs.org/en/download',
+  ollamaWindows: 'https://ollama.com/download/windows',
+}
+
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
@@ -303,6 +325,40 @@ function savePreferredModel(model: string): void {
     }
   } catch {
     // Browser privacy modes can disable localStorage. The app still works without it.
+  }
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the DOM copy path for embedded or restricted browsers.
+  }
+
+  const activeElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.setAttribute('readonly', '')
+  textArea.style.left = '-9999px'
+  textArea.style.position = 'fixed'
+  textArea.style.top = '0'
+
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+  textArea.setSelectionRange(0, textArea.value.length)
+
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textArea)
+    activeElement?.focus({ preventScroll: true })
   }
 }
 
@@ -599,11 +655,10 @@ function AgentWorkbenchWindow({
           : selectedPhase?.prompt ?? 'Select an agent phase to inspect its output.')
 
   const copyWorkbenchOutput = async () => {
-    try {
-      await navigator.clipboard.writeText(selectedOutput)
+    if (await copyTextToClipboard(selectedOutput)) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1200)
-    } catch {
+    } else {
       setCopied(false)
     }
   }
@@ -750,6 +805,7 @@ function App() {
     useState<WorkbenchPhaseId>('final')
   const [workbenchScale, setWorkbenchScale] = useState(1)
   const [isWorkbenchExpanded, setIsWorkbenchExpanded] = useState(false)
+  const [copiedSetupCommand, setCopiedSetupCommand] = useState('')
   const activeRunController = useRef<AbortController | null>(null)
 
   const activeModel = models.find((model) => model.name === selectedModel)
@@ -783,11 +839,82 @@ function App() {
   const latestRunLabel = history[0]
     ? new Date(history[0].createdAt).toLocaleDateString()
     : 'No saved runs'
+  const prerequisites = useMemo<Prerequisite[]>(
+    () => [
+      {
+        id: 'ollama',
+        title: 'Ollama',
+        description: 'Local model runtime used by the board.',
+        href: setupLinks.ollamaWindows,
+        linkLabel: 'Download',
+        command: 'ollama --version',
+        commandLabel: 'Copy check',
+        icon: Cpu,
+        status:
+          connection === 'checking' ? 'checking' : isOnline ? 'online' : 'offline',
+        statusLabel:
+          connection === 'checking' ? 'Checking' : isOnline ? 'Detected' : 'Install needed',
+      },
+      {
+        id: 'model',
+        title: 'Local model',
+        description: 'Pull at least one model before running agents.',
+        href: 'https://ollama.com/library',
+        linkLabel: 'Browse',
+        command: 'ollama pull llama3.2',
+        commandLabel: 'Copy pull',
+        icon: Download,
+        status: selectedModel ? 'online' : 'offline',
+        statusLabel: selectedModel ? 'Ready' : 'Pull one',
+      },
+      {
+        id: 'node',
+        title: 'Node.js',
+        description: 'Needed when running the app from source.',
+        href: setupLinks.nodeDownload,
+        linkLabel: 'Download',
+        command: 'npm install && npm run dev',
+        commandLabel: 'Copy run',
+        icon: Wrench,
+        status: 'neutral',
+        statusLabel: 'Source setup',
+      },
+      {
+        id: 'git',
+        title: 'Git',
+        description: 'Needed to clone or contribute to the repository.',
+        href: setupLinks.gitWindows,
+        linkLabel: 'Download',
+        command: 'git clone https://github.com/testedprofit/ollama-agent-board.git',
+        commandLabel: 'Copy clone',
+        icon: GitBranch,
+        status: 'neutral',
+        statusLabel: 'Optional',
+      },
+    ],
+    [connection, isOnline, selectedModel],
+  )
 
   const appendConsole = (message: string) => {
     setConsoleLines((current) =>
       [`${timeFormatter.format(new Date())} - ${message}`, ...current].slice(0, 10),
     )
+  }
+
+  const copySetupCommand = async (item: Prerequisite) => {
+    if (!item.command) {
+      return
+    }
+
+    if (await copyTextToClipboard(item.command)) {
+      setCopiedSetupCommand(item.id)
+      window.setTimeout(() => {
+        setCopiedSetupCommand((current) => (current === item.id ? '' : current))
+      }, 1800)
+      appendConsole(`${item.title} command copied.`)
+    } else {
+      appendConsole('Clipboard copy failed. Use the setup command from the guide.')
+    }
   }
 
   const refreshModels = async () => {
@@ -1207,6 +1334,62 @@ function App() {
                 <span>Goal</span>
                 <strong>{goalCharacterCount > 0 ? 'Ready' : 'Empty'}</strong>
               </div>
+            </div>
+          </section>
+
+          <section className="panel-section setup-section">
+            <div className="section-title">
+              <Wrench size={18} aria-hidden="true" />
+              <h2>Setup</h2>
+            </div>
+            <div className="setup-list">
+              {prerequisites.map((item) => {
+                const Icon = item.icon
+                return (
+                  <article
+                    className={`setup-item setup-item-${item.status}`}
+                    key={item.id}
+                  >
+                    <div className="setup-item-main">
+                      <span className="setup-icon">
+                        <Icon size={17} aria-hidden="true" />
+                      </span>
+                      <div>
+                        <div className="setup-title-row">
+                          <strong>{item.title}</strong>
+                          <span>{item.statusLabel}</span>
+                        </div>
+                        <p>{item.description}</p>
+                      </div>
+                    </div>
+                    <div className="setup-actions">
+                      <a
+                        className="setup-link-button"
+                        href={item.href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink size={14} aria-hidden="true" />
+                        <span>{item.linkLabel}</span>
+                      </a>
+                      {item.command ? (
+                        <button
+                          className="setup-copy-button"
+                          type="button"
+                          onClick={() => copySetupCommand(item)}
+                        >
+                          <Copy size={14} aria-hidden="true" />
+                          <span>
+                            {copiedSetupCommand === item.id
+                              ? 'Copied'
+                              : item.commandLabel ?? 'Copy'}
+                          </span>
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           </section>
 
