@@ -40,6 +40,7 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  Palette,
   Play,
   Plus,
   RefreshCcw,
@@ -71,6 +72,7 @@ import {
 type ConnectionState = 'checking' | 'online' | 'offline'
 type PhaseStatus = 'idle' | 'active' | 'done' | 'error'
 type AppView = 'board' | 'settings'
+type AppTheme = 'light' | 'dark' | 'purple'
 
 type AgentPhase = {
   id: string
@@ -152,6 +154,7 @@ type AppSettings = {
   saveRunHistory: boolean
   startWorkbenchExpanded: boolean
   temperature: number
+  theme: AppTheme
   historyLimit: number
 }
 
@@ -287,6 +290,32 @@ const setupLinks = {
   ollamaWindows: 'https://ollama.com/download/windows',
 }
 
+const appThemes: Array<{
+  id: AppTheme
+  title: string
+  description: string
+  swatches: [string, string, string]
+}> = [
+  {
+    id: 'light',
+    title: 'Light',
+    description: 'Bright workspace for daytime use.',
+    swatches: ['#ffffff', '#0f8b8d', '#d85a3a'],
+  },
+  {
+    id: 'dark',
+    title: 'Dark',
+    description: 'Low-glare command center.',
+    swatches: ['#08111f', '#22c55e', '#38bdf8'],
+  },
+  {
+    id: 'purple',
+    title: 'Purple',
+    description: 'Neon violet local AI console.',
+    swatches: ['#170f2f', '#a855f7', '#2dd4bf'],
+  },
+]
+
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
@@ -306,6 +335,7 @@ const defaultAppSettings: AppSettings = {
   saveRunHistory: true,
   startWorkbenchExpanded: false,
   temperature: 0.35,
+  theme: 'light',
 }
 
 function createInitialSteps(): AgentStep[] {
@@ -366,6 +396,10 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Math.min(max, Math.max(min, parsed))
 }
 
+function isAppTheme(value: unknown): value is AppTheme {
+  return value === 'light' || value === 'dark' || value === 'purple'
+}
+
 function sanitizeSettings(value: unknown): AppSettings {
   const candidate = isRecord(value) ? value : {}
   const contextTokens = Math.round(
@@ -415,6 +449,7 @@ function sanitizeSettings(value: unknown): AppSettings {
       0,
       1,
     ),
+    theme: isAppTheme(candidate.theme) ? candidate.theme : defaultAppSettings.theme,
   }
 }
 
@@ -1173,6 +1208,10 @@ function App() {
     }
   }, [appendConsole, settings])
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme
+  }, [settings.theme])
+
   const nodes = useMemo<AgentNodeType[]>(
     () =>
       agentPhases.map((phase, index) => {
@@ -1501,6 +1540,7 @@ function App() {
       `History: ${settings.saveRunHistory ? `${history.length}/${settings.historyLimit}` : 'off'}`,
       `Workbench scale: ${Math.round(workbenchScale * 100)}%`,
       `Matrix animation: ${settings.matrixRain ? 'on' : 'off'}`,
+      `Theme: ${settings.theme}`,
     ].join('\n')
 
     if (await copyTextToClipboard(diagnostics)) {
@@ -1659,6 +1699,10 @@ function App() {
                 <a href="#agent-memory-settings">
                   <History size={15} aria-hidden="true" />
                   <span>Agent memory</span>
+                </a>
+                <a href="#appearance-settings">
+                  <Palette size={15} aria-hidden="true" />
+                  <span>Appearance</span>
                 </a>
                 <a href="#workbench-settings">
                   <Eye size={15} aria-hidden="true" />
@@ -1850,6 +1894,46 @@ function App() {
                     <Trash2 size={16} aria-hidden="true" />
                     <span>Clear runs</span>
                   </button>
+                </div>
+              </section>
+
+              <section className="settings-panel" id="appearance-settings">
+                <div className="settings-panel-header">
+                  <div>
+                    <p className="eyebrow">Appearance</p>
+                    <h2>Color theme</h2>
+                  </div>
+                  <Palette size={20} aria-hidden="true" />
+                </div>
+
+                <div className="theme-option-grid" role="radiogroup" aria-label="Color theme">
+                  {appThemes.map((theme) => (
+                    <button
+                      className={
+                        settings.theme === theme.id
+                          ? 'theme-option theme-option-active'
+                          : 'theme-option'
+                      }
+                      type="button"
+                      role="radio"
+                      aria-checked={settings.theme === theme.id}
+                      key={theme.id}
+                      onClick={() => updateSettings({ theme: theme.id })}
+                    >
+                      <span className={`theme-preview theme-preview-${theme.id}`}>
+                        {theme.swatches.map((color) => (
+                          <span
+                            key={color}
+                            style={{ '--swatch-color': color } as CSSProperties}
+                          ></span>
+                        ))}
+                      </span>
+                      <span>
+                        <strong>{theme.title}</strong>
+                        <small>{theme.description}</small>
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </section>
 

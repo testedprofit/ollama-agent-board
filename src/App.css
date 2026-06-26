@@ -786,6 +786,74 @@ button:disabled {
   justify-content: center;
 }
 
+.theme-option-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.theme-option {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  text-align: left;
+}
+
+.theme-option:hover,
+.theme-option-active {
+  border-color: var(--accent);
+}
+
+.theme-option-active {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.theme-preview {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 6px;
+  height: 48px;
+  justify-content: center;
+}
+
+.theme-preview span {
+  background: var(--swatch-color);
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 999px;
+  height: 20px;
+  width: 20px;
+}
+
+.theme-preview-dark,
+.theme-preview-purple {
+  background: #101827;
+}
+
+.theme-option strong,
+.theme-option small {
+  display: block;
+}
+
+.theme-option strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.theme-option small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
 .visually-hidden {
   height: 1px;
   left: -9999px;
@@ -1521,6 +1589,189 @@ button:disabled {
   margin-top: 4px;
 }
 
+:root[data-theme='dark'] .topbar,
+:root[data-theme='purple'] .topbar {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+:root[data-theme='dark'] .command-strip,
+:root[data-theme='purple'] .command-strip {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+    color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+:root[data-theme='dark'] .panel-section,
+:root[data-theme='dark'] .canvas-panel,
+:root[data-theme='dark'] .settings-panel,
+:root[data-theme='purple'] .panel-section,
+:root[data-theme='purple'] .canvas-panel,
+:root[data-theme='purple'] .settings-panel {
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+}
+
+:root[data-theme='dark'] .topbar-chip,
+:root[data-theme='dark'] .status-pill,
+:root[data-theme='dark'] .command-metric,
+:root[data-theme='dark'] .icon-button,
+:root[data-theme='dark'] .ghost-button,
+:root[data-theme='dark'] .mini-icon-button,
+:root[data-theme='dark'] .setup-link-button,
+:root[data-theme='dark'] .phase-chip,
+:root[data-theme='dark'] .settings-nav a,
+:root[data-theme='dark'] .settings-link-grid a,
+:root[data-theme='dark'] .settings-range-row strong,
+:root[data-theme='dark'] .settings-readonly,
+:root[data-theme='dark'] .settings-stat,
+:root[data-theme='dark'] .settings-status-item,
+:root[data-theme='dark'] .theme-preview,
+:root[data-theme='purple'] .topbar-chip,
+:root[data-theme='purple'] .status-pill,
+:root[data-theme='purple'] .command-metric,
+:root[data-theme='purple'] .icon-button,
+:root[data-theme='purple'] .ghost-button,
+:root[data-theme='purple'] .mini-icon-button,
+:root[data-theme='purple'] .setup-link-button,
+:root[data-theme='purple'] .phase-chip,
+:root[data-theme='purple'] .settings-nav a,
+:root[data-theme='purple'] .settings-link-grid a,
+:root[data-theme='purple'] .settings-range-row strong,
+:root[data-theme='purple'] .settings-readonly,
+:root[data-theme='purple'] .settings-stat,
+:root[data-theme='purple'] .settings-status-item,
+:root[data-theme='purple'] .theme-preview {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] select,
+:root[data-theme='dark'] textarea,
+:root[data-theme='purple'] select,
+:root[data-theme='purple'] textarea {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .readiness-item,
+:root[data-theme='dark'] .template-button,
+:root[data-theme='dark'] .setup-item,
+:root[data-theme='dark'] .theme-option,
+:root[data-theme='dark'] .settings-toggle,
+:root[data-theme='dark'] .phase-progress-item,
+:root[data-theme='dark'] .run-button,
+:root[data-theme='purple'] .readiness-item,
+:root[data-theme='purple'] .template-button,
+:root[data-theme='purple'] .setup-item,
+:root[data-theme='purple'] .theme-option,
+:root[data-theme='purple'] .settings-toggle,
+:root[data-theme='purple'] .phase-progress-item,
+:root[data-theme='purple'] .run-button {
+  background: var(--surface-soft);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .mode-button,
+:root[data-theme='purple'] .mode-button {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+:root[data-theme='dark'] .mode-button.active,
+:root[data-theme='purple'] .mode-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+:root[data-theme='dark'] .danger-button,
+:root[data-theme='purple'] .danger-button {
+  background: color-mix(in srgb, #ef4444 12%, var(--surface));
+  border-color: color-mix(in srgb, #ef4444 45%, var(--line));
+  color: #fecaca;
+}
+
+:root[data-theme='dark'] .setup-copy-button,
+:root[data-theme='purple'] .setup-copy-button {
+  background: var(--surface-strong);
+  border-color: var(--line-strong);
+  color: var(--surface-text-on-strong);
+}
+
+:root[data-theme='dark'] .phase-progress-rail,
+:root[data-theme='purple'] .phase-progress-rail {
+  background: var(--line);
+}
+
+:root[data-theme='dark'] .phase-progress-index,
+:root[data-theme='purple'] .phase-progress-index {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+:root[data-theme='dark'] .flow-shell {
+  background:
+    linear-gradient(90deg, rgba(34, 197, 94, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(148, 163, 184, 0.09) 1px, transparent 1px),
+    #07111f;
+  background-size: 44px 44px;
+}
+
+:root[data-theme='purple'] .flow-shell {
+  background:
+    linear-gradient(90deg, rgba(168, 85, 247, 0.12) 1px, transparent 1px),
+    linear-gradient(rgba(45, 212, 191, 0.09) 1px, transparent 1px),
+    #150d2b;
+  background-size: 44px 44px;
+}
+
+:root[data-theme='dark'] .agent-node,
+:root[data-theme='purple'] .agent-node {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .agent-node-icon,
+:root[data-theme='purple'] .agent-node-icon {
+  background: color-mix(in srgb, var(--node-accent) 18%, var(--surface));
+}
+
+:root[data-theme='dark'] .agent-node-status,
+:root[data-theme='purple'] .agent-node-status {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+:root[data-theme='dark'] .agent-node p,
+:root[data-theme='purple'] .agent-node p {
+  color: var(--muted);
+}
+
+:root[data-theme='dark'] .output-box,
+:root[data-theme='dark'] .console-list,
+:root[data-theme='purple'] .output-box,
+:root[data-theme='purple'] .console-list {
+  background: var(--surface-strong);
+  color: var(--surface-text-on-strong);
+}
+
+:root[data-theme='dark'] .console-list p,
+:root[data-theme='purple'] .console-list p {
+  color: var(--surface-text-on-strong);
+}
+
+:root[data-theme='dark'] .react-flow__controls-button,
+:root[data-theme='purple'] .react-flow__controls-button {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
 .react-flow__controls-button {
   border-bottom: 1px solid var(--line);
 }
@@ -1683,7 +1934,8 @@ button:disabled {
   .settings-nav,
   .settings-status-list,
   .settings-actions-grid,
-  .settings-link-grid {
+  .settings-link-grid,
+  .theme-option-grid {
     grid-template-columns: 1fr;
   }
 
