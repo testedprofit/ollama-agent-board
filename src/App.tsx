@@ -91,6 +91,15 @@ type Template = {
   icon: LucideIcon
 }
 
+const matrixStreams = [
+  '010110100101101001011010010110100101101001011010010110',
+  '101101001011010010110100101101001011010010110100101101',
+  '001101101001110010010110010110100101101001011010010110',
+  '110010101101001101010010101001101011010110010100100101',
+  '011001101010100110010101001011010110110100101001010110',
+  '100101011010011010100101110010110100001101001011101001',
+]
+
 const agentPhases: AgentPhase[] = [
   {
     id: 'intake',
@@ -345,6 +354,39 @@ function AgentNode({ data }: NodeProps<AgentNodeType>) {
   )
 }
 
+function MatrixThinkingOverlay() {
+  return (
+    <div className="matrix-thinking-overlay" aria-live="polite" aria-label="Agent is thinking">
+      <div className="matrix-grid-glow" aria-hidden="true"></div>
+      <div className="matrix-rain" aria-hidden="true">
+        {Array.from({ length: 38 }, (_, index) => {
+          const stream = matrixStreams[index % matrixStreams.length]
+          const style = {
+            '--matrix-left': `${(index * 2.75) % 100}%`,
+            '--matrix-duration': `${4.4 + (index % 8) * 0.42}s`,
+            '--matrix-delay': `${(index % 13) * -0.34}s`,
+            '--matrix-size': `${13 + (index % 5)}px`,
+          } as CSSProperties
+
+          return (
+            <span
+              className={`matrix-column ${index % 3 === 0 ? 'matrix-column-rise' : ''}`}
+              key={`${stream}-${index}`}
+              style={style}
+            >
+              {stream}
+            </span>
+          )
+        })}
+      </div>
+      <div className="matrix-thinking-label">
+        <span>AGENT IS THINKING</span>
+        <small>local model running</small>
+      </div>
+    </div>
+  )
+}
+
 const nodeTypes = {
   agent: AgentNode,
 }
@@ -363,6 +405,7 @@ function App() {
   const [quickTask, setQuickTask] = useState<QuickTask>('summarize')
   const [quickOutput, setQuickOutput] = useState('')
   const [isRunning, setIsRunning] = useState(false)
+  const [isAgentThinking, setIsAgentThinking] = useState(false)
 
   const activeModel = models.find((model) => model.name === selectedModel)
   const completedSteps = steps.filter((step) => step.status === 'done').length
@@ -460,6 +503,7 @@ function App() {
     }
 
     setIsRunning(true)
+    setIsAgentThinking(true)
     setSteps(createInitialSteps())
     setQuickOutput('')
     appendConsole(`Started local agent run on ${selectedModel}.`)
@@ -522,6 +566,7 @@ function App() {
       )
       appendConsole(message)
     } finally {
+      setIsAgentThinking(false)
       setIsRunning(false)
     }
   }
@@ -748,6 +793,7 @@ function App() {
               <Background gap={22} size={1} color="#cbd5e1" />
               <Controls showInteractive={false} />
             </ReactFlow>
+            {isAgentThinking ? <MatrixThinkingOverlay /> : null}
           </div>
         </section>
 

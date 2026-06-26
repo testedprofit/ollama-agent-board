@@ -284,6 +284,120 @@ button:disabled {
   background-size: 44px 44px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.matrix-thinking-overlay {
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(8, 58, 29, 0.52), transparent 34%),
+    linear-gradient(180deg, rgba(1, 18, 9, 0.68), rgba(0, 8, 4, 0.9));
+  color: #5cff68;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  z-index: 8;
+}
+
+.matrix-grid-glow {
+  background:
+    linear-gradient(90deg, rgba(92, 255, 104, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(92, 255, 104, 0.08) 1px, transparent 1px);
+  background-size: 34px 34px;
+  inset: 0;
+  opacity: 0.56;
+  position: absolute;
+}
+
+.matrix-rain {
+  inset: 0;
+  position: absolute;
+}
+
+.matrix-column {
+  animation: matrix-fall var(--matrix-duration) linear infinite;
+  animation-delay: var(--matrix-delay);
+  color: #76ff7d;
+  filter: drop-shadow(0 0 12px rgba(88, 255, 97, 0.86));
+  font-family: var(--mono);
+  font-size: var(--matrix-size);
+  font-weight: 800;
+  left: var(--matrix-left);
+  line-height: 1;
+  opacity: 0.94;
+  position: absolute;
+  text-align: center;
+  text-shadow:
+    0 0 5px rgba(205, 255, 207, 0.98),
+    0 0 18px rgba(23, 255, 64, 0.8),
+    0 0 34px rgba(23, 255, 64, 0.38);
+  text-orientation: upright;
+  top: -115%;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  z-index: 1;
+}
+
+.matrix-column::first-line {
+  color: #e5ffe8;
+}
+
+.matrix-column:nth-child(2n) {
+  color: #25f45b;
+  opacity: 0.68;
+}
+
+.matrix-column:nth-child(5n) {
+  color: #b7ffc0;
+  opacity: 1;
+}
+
+.matrix-column-rise {
+  animation-name: matrix-rise;
+  bottom: -115%;
+  top: auto;
+}
+
+.matrix-thinking-label {
+  align-items: center;
+  background: rgba(0, 31, 10, 0.78);
+  border: 1px solid rgba(66, 255, 87, 0.46);
+  border-radius: 8px;
+  box-shadow:
+    0 0 34px rgba(42, 255, 67, 0.35),
+    inset 0 0 22px rgba(28, 120, 42, 0.36);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: min(360px, calc(100% - 48px));
+  padding: 18px 24px;
+  position: relative;
+  text-align: center;
+  z-index: 2;
+}
+
+.matrix-thinking-label span {
+  color: #063f17;
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-shadow:
+    0 0 8px rgba(80, 255, 92, 0.9),
+    0 0 22px rgba(39, 255, 72, 0.65);
+}
+
+.matrix-thinking-label small {
+  color: #66ff75;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .agent-node {
@@ -467,6 +581,26 @@ button:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes matrix-fall {
+  from {
+    transform: translateY(-4%);
+  }
+
+  to {
+    transform: translateY(145%);
+  }
+}
+
+@keyframes matrix-rise {
+  from {
+    transform: translateY(4%);
+  }
+
+  to {
+    transform: translateY(-145%);
   }
 }
 
