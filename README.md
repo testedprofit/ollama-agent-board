@@ -12,6 +12,7 @@ Everything runs locally. The browser app talks to Ollama through a local proxy p
 - Shows a Matrix-style workbench while the agent is thinking, then writes the finished output into the same window.
 - Provides reusable workflows for inbox triage, study guides, code review, and launch briefs.
 - Runs quick actions against pasted text: summarize, extract tasks, rewrite, and explain.
+- Shows local PC CPU, memory, and Ollama process load while models are running.
 - Includes a Settings tab for model defaults, generation profile, Light/Dark/Purple themes, workbench display, history, imports, exports, diagnostics, and local data cleanup.
 - Supports stopping long local model runs, copying output, resizing the workbench, and exporting markdown.
 - Saves recent runs in browser storage, with a clear-history control.

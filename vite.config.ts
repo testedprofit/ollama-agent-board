@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { readSystemStats } from './system-stats.mjs'
 
 const allowedOllamaPaths = new Map([
   ['/tags', new Set(['GET'])],
@@ -97,6 +98,31 @@ function ollamaDevProxy(): Plugin {
   return {
     name: 'ollama-dev-proxy',
     configureServer(server) {
+      server.middlewares.use('/api/system-stats', async (request, response) => {
+        if (request.method !== 'GET') {
+          response.statusCode = 405
+          response.setHeader('Content-Type', 'application/json')
+          response.end(JSON.stringify({ error: 'Unsupported system stats method' }))
+          return
+        }
+
+        try {
+          response.statusCode = 200
+          response.setHeader('Cache-Control', 'no-store')
+          response.setHeader('Content-Type', 'application/json')
+          response.end(JSON.stringify(await readSystemStats()))
+        } catch (error) {
+          response.statusCode = 500
+          response.setHeader('Content-Type', 'application/json')
+          response.end(
+            JSON.stringify({
+              error: 'System stats are not available',
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+          )
+        }
+      })
+
       server.middlewares.use('/api/ollama', async (request, response) => {
         const requestUrl = new URL(request.url ?? '/', 'http://local-proxy')
 

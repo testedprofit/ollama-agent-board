@@ -117,6 +117,35 @@ type OllamaErrorResponse = {
   error?: string
 }
 
+type SystemStatsResponse = {
+  sampledAt: string
+  platform: {
+    arch: string
+    os: string
+    uptimeSeconds: number
+  }
+  cpu: {
+    cores: number
+    loadAverage: number[]
+    percent: number | null
+  }
+  memory: {
+    freeBytes: number
+    totalBytes: number
+    usedBytes: number
+    usedPercent: number
+  }
+  ollama: {
+    cpuPercent: number | null
+    detected: boolean
+    error?: string
+    memoryBytes: number
+    names: string[]
+    pids: number[]
+    processCount: number
+  }
+}
+
 type SavedRun = {
   id: string
   createdAt: string
@@ -188,6 +217,20 @@ type PhaseReviewPanelProps = {
   output: string
   selectedPhaseId: WorkbenchPhaseId
   steps: AgentStep[]
+}
+
+type StatsMeterProps = {
+  detail: string
+  label: string
+  percent: number | null | undefined
+  value: string
+}
+
+type SystemStatsPanelProps = {
+  isRunning: boolean
+  onRefresh: () => void
+  state: ConnectionState
+  stats: SystemStatsResponse | null
 }
 
 const matrixStreams = [
@@ -535,9 +578,14 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 function formatBytes(size?: number): string {
-  if (!size) {
+  if (typeof size !== 'number' || !Number.isFinite(size)) {
     return 'local model'
   }
+
+  if (size <= 0) {
+    return '0 B'
+  }
+
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let value = size
   let unitIndex = 0
@@ -546,6 +594,32 @@ function formatBytes(size?: number): string {
     unitIndex += 1
   }
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function formatPercent(value?: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${Math.round(value)}%`
+    : 'Sampling'
+}
+
+function formatDuration(seconds?: number): string {
+  if (!seconds || seconds < 0) {
+    return 'Starting'
+  }
+
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+
+  if (days > 0) {
+    return `${days}d ${hours}h`
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+
+  return `${Math.max(minutes, 1)}m`
 }
 
 function createRequestSignal(timeoutMs: number, externalSignal?: AbortSignal) {
@@ -667,6 +741,19 @@ async function fetchOllamaModels(): Promise<OllamaModel[]> {
   )
 
   return data.models ?? []
+}
+
+async function fetchSystemStats(): Promise<SystemStatsResponse> {
+  const response = await fetch('/api/system-stats', {
+    cache: 'no-store',
+    method: 'GET',
+  })
+
+  if (!response.ok) {
+    throw new Error(await readResponseError(response))
+  }
+
+  return (await response.json()) as SystemStatsResponse
 }
 
 function createRunMarkdown(run: SavedRun): string {
@@ -1062,6 +1149,116 @@ function AgentWorkbenchWindow({
   )
 }
 
+function StatsMeter({ detail, label, percent, value }: StatsMeterProps) {
+  const safePercent =
+    typeof percent === 'number' && Number.isFinite(percent)
+      ? Math.min(100, Math.max(0, percent))
+      : 0
+
+  return (
+    <div className="stats-meter">
+      <div className="stats-meter-top">
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
+      <div className="stats-track" aria-hidden="true">
+        <span style={{ '--stat-percent': `${safePercent}%` } as CSSProperties}></span>
+      </div>
+      <p>{detail}</p>
+    </div>
+  )
+}
+
+function SystemStatsPanel({
+  isRunning,
+  onRefresh,
+  state,
+  stats,
+}: SystemStatsPanelProps) {
+  const modelProcessLabel = stats?.ollama.detected
+    ? `${stats.ollama.processCount} process${stats.ollama.processCount === 1 ? '' : 'es'}`
+    : state === 'offline'
+      ? 'Unavailable'
+      : 'No model process'
+  const modelNames = stats?.ollama.names.join(', ') || modelProcessLabel
+  const statsStateLabel =
+    state === 'checking' ? 'Sampling' : state === 'online' ? 'Live' : 'Offline'
+  const sampledAt = stats ? timeFormatter.format(new Date(stats.sampledAt)) : 'Waiting'
+
+  return (
+    <section className="panel-section stats-panel">
+      <div className="section-title section-title-with-action">
+        <div className="section-title-label">
+          <Activity size={18} aria-hidden="true" />
+          <h2>PC stats</h2>
+        </div>
+        <button
+          className="mini-icon-button"
+          type="button"
+          onClick={onRefresh}
+          aria-label="Refresh PC stats"
+          title="Refresh PC stats"
+        >
+          <RefreshCcw size={14} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="stats-status-row">
+        <span className={`stats-live-pill stats-live-${state}`}>
+          {isRunning ? 'Run load' : statsStateLabel}
+        </span>
+        <span>{sampledAt}</span>
+      </div>
+
+      <div className="stats-meter-list">
+        <StatsMeter
+          label="CPU"
+          value={formatPercent(stats?.cpu.percent)}
+          percent={stats?.cpu.percent}
+          detail={stats ? `${stats.cpu.cores} logical cores` : 'Sampling local CPU'}
+        />
+        <StatsMeter
+          label="Memory"
+          value={formatPercent(stats?.memory.usedPercent)}
+          percent={stats?.memory.usedPercent}
+          detail={
+            stats
+              ? `${formatBytes(stats.memory.usedBytes)} / ${formatBytes(stats.memory.totalBytes)}`
+              : 'Sampling system memory'
+          }
+        />
+        <StatsMeter
+          label="Ollama load"
+          value={stats?.ollama.detected ? formatPercent(stats.ollama.cpuPercent) : 'Idle'}
+          percent={stats?.ollama.cpuPercent}
+          detail={
+            stats?.ollama.detected
+              ? `${formatBytes(stats.ollama.memoryBytes)} RAM`
+              : 'Waiting for local model work'
+          }
+        />
+      </div>
+
+      <div className="stats-meta-grid">
+        <div>
+          <span>Processes</span>
+          <strong title={modelNames}>{modelProcessLabel}</strong>
+        </div>
+        <div>
+          <span>Runtime</span>
+          <strong>
+            {stats ? `${stats.platform.os} ${stats.platform.arch}` : 'Local'}
+          </strong>
+        </div>
+        <div>
+          <span>Uptime</span>
+          <strong>{formatDuration(stats?.platform.uptimeSeconds)}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 const nodeTypes = {
   agent: AgentNode,
 }
@@ -1073,6 +1270,9 @@ function App() {
   const [settings, setSettings] = useState(initialSettings)
   const [activeView, setActiveView] = useState<AppView>('board')
   const [connection, setConnection] = useState<ConnectionState>('checking')
+  const [systemStatsState, setSystemStatsState] =
+    useState<ConnectionState>('checking')
+  const [systemStats, setSystemStats] = useState<SystemStatsResponse | null>(null)
   const [objective, setObjective] = useState(defaultObjective)
   const [sourceText, setSourceText] = useState(sampleText)
   const [steps, setSteps] = useState<AgentStep[]>(createInitialSteps)
@@ -1133,6 +1333,12 @@ function App() {
   const latestRunLabel = history[0]
     ? new Date(history[0].createdAt).toLocaleDateString()
     : 'No saved runs'
+  const systemCpuLabel =
+    typeof systemStats?.cpu.percent === 'number'
+      ? formatPercent(systemStats.cpu.percent)
+      : systemStatsState === 'offline'
+        ? 'Offline'
+        : 'Sampling'
   const commandMetrics =
     activeView === 'settings'
       ? [
@@ -1159,8 +1365,8 @@ function App() {
             value: `${progressPercent}%`,
           },
           {
-            label: 'Saved',
-            value: latestRunLabel,
+            label: 'PC CPU',
+            value: systemCpuLabel,
           },
         ]
   const prerequisites = useMemo<Prerequisite[]>(
@@ -1276,9 +1482,30 @@ function App() {
     }
   }, [appendConsole, settings.autoSelectModel])
 
+  const refreshSystemStats = useCallback(async () => {
+    setSystemStatsState((current) => (current === 'online' ? current : 'checking'))
+
+    try {
+      setSystemStats(await fetchSystemStats())
+      setSystemStatsState('online')
+    } catch {
+      setSystemStatsState('offline')
+    }
+  }, [])
+
   useEffect(() => {
     void refreshModels()
   }, [refreshModels])
+
+  useEffect(() => {
+    void refreshSystemStats()
+    const intervalId = window.setInterval(
+      () => void refreshSystemStats(),
+      isRunning ? 1200 : 3000,
+    )
+
+    return () => window.clearInterval(intervalId)
+  }, [isRunning, refreshSystemStats])
 
   useEffect(() => {
     if (!settings.saveRunHistory) {
@@ -2416,6 +2643,13 @@ function App() {
         </section>
 
         <aside className="output-panel">
+          <SystemStatsPanel
+            isRunning={isRunning}
+            onRefresh={refreshSystemStats}
+            state={systemStatsState}
+            stats={systemStats}
+          />
+
           <section className="panel-section">
             <div className="section-title">
               <FileText size={18} aria-hidden="true" />

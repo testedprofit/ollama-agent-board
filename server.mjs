@@ -2,6 +2,7 @@ import express from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readSystemStats } from './system-stats.mjs'
 
 const app = express()
 const port = Number(process.env.PORT ?? 4173)
@@ -101,6 +102,18 @@ app.get('/healthz', (_request, response) => {
     ok: true,
     app: 'ollama-agent-board',
   })
+})
+
+app.get('/api/system-stats', async (_request, response) => {
+  try {
+    response.setHeader('Cache-Control', 'no-store')
+    response.json(await readSystemStats())
+  } catch (error) {
+    response.status(500).json({
+      error: 'System stats are not available',
+      detail: error instanceof Error ? error.message : String(error),
+    })
+  }
 })
 
 app.use(express.json({ limit: maxProxyBodyBytes }))
