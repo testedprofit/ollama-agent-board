@@ -265,12 +265,14 @@ type RunQualityPanelProps = {
 }
 
 const matrixStreams = [
-  '010110100101101001011010010110100101101001011010010110',
-  '101101001011010010110100101101001011010010110100101101',
-  '001101101001110010010110010110100101101001011010010110',
-  '110010101101001101010010101001101011010110010100100101',
-  '011001101010100110010101001011010110110100101001010110',
-  '100101011010011010100101110010110100001101001011101001',
+  '0101101001011010013370101101001011010010110100101101001011010',
+  '1011010010110100101101001011010013371011010010110100101101',
+  '001101101001110010010110010110100101101001011010013370110',
+  '1100101011010011010100101010011010110101100101001001011337',
+  '0110011010101001100101010010110101101101001010010101100101',
+  '1001010110100110101001011100101101000011010010111010010110',
+  '1110001010010111011010010101100110100101110100101101001337',
+  '0100111010010110100101110010110100101001011010010110110100',
 ]
 
 const agentPhases: AgentPhase[] = [
@@ -399,7 +401,7 @@ const appThemes: Array<{
   {
     id: 'matrix',
     title: 'Matrix',
-    description: 'Black glass, phosphor green glow.',
+    description: '1337 terminal, code rain, phosphor glow.',
     swatches: ['#020805', '#39ff14', '#0f2f16'],
   },
 ]
@@ -1039,12 +1041,12 @@ function MatrixRain() {
     <>
       <div className="matrix-grid-glow" aria-hidden="true"></div>
       <div className="matrix-rain" aria-hidden="true">
-        {Array.from({ length: 38 }, (_, index) => {
+        {Array.from({ length: 52 }, (_, index) => {
           const stream = matrixStreams[index % matrixStreams.length]
           const style = {
-            '--matrix-left': `${(index * 2.75) % 100}%`,
-            '--matrix-duration': `${4.4 + (index % 8) * 0.42}s`,
-            '--matrix-delay': `${(index % 13) * -0.34}s`,
+            '--matrix-left': `${(index * 1.95) % 100}%`,
+            '--matrix-duration': `${3.7 + (index % 9) * 0.36}s`,
+            '--matrix-delay': `${(index % 17) * -0.27}s`,
             '--matrix-size': `${13 + (index % 5)}px`,
           } as CSSProperties
 
@@ -1139,6 +1141,7 @@ function AgentWorkbenchWindow({
               <p className="eyebrow">{statusText}</p>
               <h3>{selectedTitle}</h3>
             </div>
+            <span className="workbench-terminal-badge">1337 MODE</span>
           </div>
           <div className="workbench-tools">
             <button
@@ -2547,6 +2550,9 @@ function App() {
                       </span>
                       <span>
                         <strong>{theme.title}</strong>
+                        {theme.id === 'matrix' ? (
+                          <em className="theme-leet-badge">1337 MODE</em>
+                        ) : null}
                         <small>{theme.description}</small>
                       </span>
                     </button>

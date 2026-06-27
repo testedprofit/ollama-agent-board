@@ -51,17 +51,17 @@
 }
 
 :root[data-theme='matrix'] {
-  --accent: #39ff14;
-  --bg: #020805;
-  --ink: #d8ffdc;
-  --line: #164e23;
-  --line-strong: #26a640;
-  --muted: #7df58d;
-  --surface: #06130a;
-  --surface-soft: #0a1f0f;
-  --surface-strong: #000f05;
-  --surface-text-on-strong: #d8ffdc;
-  --shadow: 0 20px 54px rgba(0, 255, 65, 0.16);
+  --accent: #00ff41;
+  --bg: #000301;
+  --ink: #e2ffe7;
+  --line: #0d5f24;
+  --line-strong: #2bff61;
+  --muted: #8bff9d;
+  --surface: #031006;
+  --surface-soft: #061c0b;
+  --surface-strong: #000a03;
+  --surface-text-on-strong: #e2ffe7;
+  --shadow: 0 22px 58px rgba(0, 255, 65, 0.22);
 }
 
 body {
@@ -89,13 +89,23 @@ body {
 
 :root[data-theme='matrix'] body {
   background:
-    linear-gradient(90deg, rgba(57, 255, 20, 0.045) 1px, transparent 1px),
-    linear-gradient(rgba(57, 255, 20, 0.035) 1px, transparent 1px),
-    radial-gradient(circle at 50% 0%, rgba(57, 255, 20, 0.14), transparent 34%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 255, 65, 0.055) 0,
+      rgba(0, 255, 65, 0.055) 1px,
+      transparent 1px,
+      transparent 6px
+    ),
+    linear-gradient(90deg, rgba(0, 255, 65, 0.055) 1px, transparent 1px),
+    linear-gradient(rgba(0, 255, 65, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 48% 0%, rgba(0, 255, 65, 0.22), transparent 34%),
+    radial-gradient(circle at 85% 18%, rgba(111, 255, 137, 0.12), transparent 26%),
     var(--bg);
   background-size:
+    auto,
     28px 28px,
     28px 28px,
+    auto,
     auto,
     auto;
 }
