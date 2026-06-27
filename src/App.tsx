@@ -68,6 +68,15 @@ import {
   sampleText,
   type QuickTask,
 } from './lib/agentPrompt'
+import {
+  calculateRunQualityScore,
+  createRunQualityChecks,
+  getContextSnapshot,
+  getContextStatusLabel,
+  getModelFitLabel,
+  type ContextSnapshot,
+  type RunQualityCheck,
+} from './lib/localQa'
 
 type ConnectionState = 'checking' | 'online' | 'offline'
 type PhaseStatus = 'idle' | 'active' | 'done' | 'error'
@@ -154,6 +163,13 @@ type SavedRun = {
   output: string
 }
 
+type DraftState = {
+  objective: string
+  quickTask: QuickTask
+  sourceText: string
+  updatedAt: string
+}
+
 type Template = {
   title: string
   objective: string
@@ -175,6 +191,7 @@ type Prerequisite = {
 }
 
 type AppSettings = {
+  autoSaveDrafts: boolean
   autoSelectModel: boolean
   contextTokens: number
   defaultWorkbenchScale: number
@@ -231,6 +248,20 @@ type SystemStatsPanelProps = {
   onRefresh: () => void
   state: ConnectionState
   stats: SystemStatsResponse | null
+}
+
+type ContextGuardPanelProps = {
+  activeModel?: OllamaModel
+  context: ContextSnapshot
+  goalCharacters: number
+  sourceCharacters: number
+  systemStats: SystemStatsResponse | null
+}
+
+type RunQualityPanelProps = {
+  checks: RunQualityCheck[]
+  onCopy: () => void
+  score: number
 }
 
 const matrixStreams = [
@@ -373,10 +404,12 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 const historyStorageKey = 'ollama-agent-board:runs'
+const draftStorageKey = 'ollama-agent-board:draft'
 const selectedModelStorageKey = 'ollama-agent-board:selected-model'
 const settingsStorageKey = 'ollama-agent-board:settings'
 const modelRefreshTimeoutMs = 10000
 const defaultAppSettings: AppSettings = {
+  autoSaveDrafts: true,
   autoSelectModel: true,
   contextTokens: 4096,
   defaultWorkbenchScale: 1,
@@ -412,6 +445,20 @@ function isSavedRun(value: unknown): value is SavedRun {
   )
 }
 
+function isDraftState(value: unknown): value is DraftState {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<DraftState>
+  return (
+    typeof candidate.objective === 'string' &&
+    typeof candidate.sourceText === 'string' &&
+    typeof candidate.updatedAt === 'string' &&
+    Boolean(candidate.quickTask && candidate.quickTask in quickTaskLabels)
+  )
+}
+
 function loadStoredRuns(): SavedRun[] {
   try {
     const stored = localStorage.getItem(historyStorageKey)
@@ -422,6 +469,20 @@ function loadStoredRuns(): SavedRun[] {
     return Array.isArray(parsed) ? parsed.filter(isSavedRun).slice(0, 8) : []
   } catch {
     return []
+  }
+}
+
+function loadDraft(): DraftState | null {
+  try {
+    const stored = localStorage.getItem(draftStorageKey)
+    if (!stored) {
+      return null
+    }
+
+    const parsed = JSON.parse(stored) as unknown
+    return isDraftState(parsed) ? parsed : null
+  } catch {
+    return null
   }
 }
 
@@ -469,6 +530,10 @@ function sanitizeSettings(value: unknown): AppSettings {
   )
 
   return {
+    autoSaveDrafts:
+      typeof candidate.autoSaveDrafts === 'boolean'
+        ? candidate.autoSaveDrafts
+        : defaultAppSettings.autoSaveDrafts,
     autoSelectModel:
       typeof candidate.autoSelectModel === 'boolean'
         ? candidate.autoSelectModel
@@ -519,6 +584,23 @@ function saveStoredRuns(history: SavedRun[]): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+function saveDraft(draft: DraftState): boolean {
+  try {
+    localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeDraft(): void {
+  try {
+    localStorage.removeItem(draftStorageKey)
+  } catch {
+    // Browser privacy modes can disable localStorage. The app still works without it.
   }
 }
 
@@ -1259,12 +1341,109 @@ function SystemStatsPanel({
   )
 }
 
+function ContextGuardPanel({
+  activeModel,
+  context,
+  goalCharacters,
+  sourceCharacters,
+  systemStats,
+}: ContextGuardPanelProps) {
+  const modelFitLabel = getModelFitLabel(activeModel, systemStats)
+  const contextLabel = getContextStatusLabel(context.status)
+
+  return (
+    <section className="panel-section context-guard-panel">
+      <div className="section-title">
+        <Gauge size={18} aria-hidden="true" />
+        <h2>Run guardrails</h2>
+      </div>
+
+      <div className={`context-gauge context-gauge-${context.status}`}>
+        <div className="context-gauge-top">
+          <span>Context pressure</span>
+          <strong>{contextLabel}</strong>
+        </div>
+        <div className="context-track" aria-hidden="true">
+          <span style={{ '--context-percent': `${context.percent}%` } as CSSProperties}></span>
+        </div>
+        <p>
+          {context.estimatedTokens.toLocaleString()} estimated tokens of the configured
+          window.
+        </p>
+      </div>
+
+      <div className="guardrail-grid">
+        <div>
+          <span>Goal</span>
+          <strong>{goalCharacters.toLocaleString()} chars</strong>
+        </div>
+        <div>
+          <span>Source</span>
+          <strong>{sourceCharacters.toLocaleString()} chars</strong>
+        </div>
+        <div>
+          <span>Model fit</span>
+          <strong>{modelFitLabel}</strong>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function RunQualityPanel({ checks, onCopy, score }: RunQualityPanelProps) {
+  const scoreLabel = score >= 82 ? 'Ready' : score >= 58 ? 'Review' : 'Blocked'
+
+  return (
+    <section className="panel-section run-quality-panel">
+      <div className="section-title section-title-with-action">
+        <div className="section-title-label">
+          <SearchCheck size={18} aria-hidden="true" />
+          <h2>Run QA</h2>
+        </div>
+        <button
+          className="mini-icon-button"
+          type="button"
+          onClick={onCopy}
+          aria-label="Copy run QA"
+          title="Copy run QA"
+        >
+          <Copy size={14} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="quality-score-row">
+        <div
+          className={`quality-score quality-score-${scoreLabel.toLowerCase()}`}
+          style={{ '--quality-score': `${score}%` } as CSSProperties}
+        >
+          <strong>{score}</strong>
+          <span>{scoreLabel}</span>
+        </div>
+        <p>Local checks for model readiness, context, review coverage, output, and RAM.</p>
+      </div>
+
+      <div className="quality-check-list">
+        {checks.map((check) => (
+          <div className={`quality-check quality-check-${check.status}`} key={check.label}>
+            <span className="quality-check-dot" aria-hidden="true"></span>
+            <div>
+              <strong>{check.label}</strong>
+              <p>{check.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 const nodeTypes = {
   agent: AgentNode,
 }
 
 function App() {
   const initialSettings = useMemo(loadSettings, [])
+  const initialDraft = useMemo(loadDraft, [])
   const [models, setModels] = useState<OllamaModel[]>([])
   const [selectedModel, setSelectedModel] = useState(loadPreferredModel)
   const [settings, setSettings] = useState(initialSettings)
@@ -1273,14 +1452,20 @@ function App() {
   const [systemStatsState, setSystemStatsState] =
     useState<ConnectionState>('checking')
   const [systemStats, setSystemStats] = useState<SystemStatsResponse | null>(null)
-  const [objective, setObjective] = useState(defaultObjective)
-  const [sourceText, setSourceText] = useState(sampleText)
+  const [objective, setObjective] = useState(
+    initialDraft?.objective || defaultObjective,
+  )
+  const [sourceText, setSourceText] = useState(
+    initialDraft?.sourceText || sampleText,
+  )
   const [steps, setSteps] = useState<AgentStep[]>(createInitialSteps)
   const [history, setHistory] = useState<SavedRun[]>(loadStoredRuns)
   const [consoleLines, setConsoleLines] = useState<string[]>([
     'Waiting for a local Ollama model.',
   ])
-  const [quickTask, setQuickTask] = useState<QuickTask>('summarize')
+  const [quickTask, setQuickTask] = useState<QuickTask>(
+    initialDraft?.quickTask || 'summarize',
+  )
   const [quickOutput, setQuickOutput] = useState('')
   const [isRunning, setIsRunning] = useState(false)
   const [isAgentThinking, setIsAgentThinking] = useState(false)
@@ -1295,6 +1480,7 @@ function App() {
   const [copiedSetupCommand, setCopiedSetupCommand] = useState('')
   const [copiedSettingsAction, setCopiedSettingsAction] = useState('')
   const activeRunController = useRef<AbortController | null>(null)
+  const draftStorageWarningShown = useRef(false)
   const settingsFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const activeModel = models.find((model) => model.name === selectedModel)
@@ -1309,6 +1495,27 @@ function App() {
   const progressPercent = Math.round((completedSteps / agentPhases.length) * 100)
   const goalCharacterCount = objective.trim().length
   const sourceCharacterCount = sourceText.trim().length
+  const contextSnapshot = useMemo(
+    () => getContextSnapshot(objective, sourceText, settings.contextTokens),
+    [objective, settings.contextTokens, sourceText],
+  )
+  const runQualityChecks = useMemo(
+    () =>
+      createRunQualityChecks({
+        connection,
+        context: contextSnapshot,
+        output: workbenchOutput,
+        selectedModel,
+        steps,
+        systemStats,
+        totalPhaseCount: agentPhases.length,
+      }),
+    [connection, contextSnapshot, selectedModel, steps, systemStats, workbenchOutput],
+  )
+  const runQualityScore = useMemo(
+    () => calculateRunQualityScore(runQualityChecks),
+    [runQualityChecks],
+  )
   const runButtonDisabled = isRunning || !selectedModel
   const quickActionDisabled = isRunning || !selectedModel
   const runButtonLabel = !selectedModel ? 'Model required' : isRunning ? 'Running' : 'Run agent'
@@ -1530,6 +1737,28 @@ function App() {
   useEffect(() => {
     savePreferredModel(selectedModel)
   }, [selectedModel])
+
+  useEffect(() => {
+    if (!settings.autoSaveDrafts) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const saved = saveDraft({
+        objective,
+        quickTask,
+        sourceText,
+        updatedAt: new Date().toISOString(),
+      })
+
+      if (!saved && !draftStorageWarningShown.current) {
+        draftStorageWarningShown.current = true
+        appendConsole('Draft autosave is unavailable in this browser.')
+      }
+    }, 700)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [appendConsole, objective, quickTask, settings.autoSaveDrafts, sourceText])
 
   useEffect(() => {
     if (!saveSettings(settings)) {
@@ -1863,8 +2092,10 @@ function App() {
       `Connection: ${connection}`,
       `Selected model: ${selectedModel || 'none'}`,
       `Models found: ${models.length}`,
+      `Draft autosave: ${settings.autoSaveDrafts ? 'on' : 'off'}`,
       `Temperature: ${settings.temperature.toFixed(2)}`,
       `Context tokens: ${settings.contextTokens}`,
+      `Estimated prompt tokens: ${contextSnapshot.estimatedTokens}`,
       `Timeout seconds: ${settings.requestTimeoutSeconds}`,
       `History: ${settings.saveRunHistory ? `${history.length}/${settings.historyLimit}` : 'off'}`,
       `Workbench scale: ${Math.round(workbenchScale * 100)}%`,
@@ -1885,6 +2116,26 @@ function App() {
     }
   }
 
+  const copyRunQuality = async () => {
+    const report = [
+      'Ollama Agent Board run QA',
+      `Score: ${runQualityScore}/100`,
+      `Model: ${selectedModel || 'none'}`,
+      `Context: ${contextSnapshot.estimatedTokens.toLocaleString()} estimated tokens (${contextSnapshot.percent}%)`,
+      '',
+      ...runQualityChecks.map(
+        (check) =>
+          `- ${check.status.toUpperCase()} ${check.label}: ${check.detail}`,
+      ),
+    ].join('\n')
+
+    if (await copyTextToClipboard(report)) {
+      appendConsole('Run QA copied.')
+    } else {
+      appendConsole('Run QA copy failed.')
+    }
+  }
+
   const clearPreferredModel = () => {
     setSelectedModel('')
     try {
@@ -1895,13 +2146,25 @@ function App() {
     appendConsole('Preferred model cleared.')
   }
 
+  const clearDraft = () => {
+    removeDraft()
+    setObjective(defaultObjective)
+    setSourceText(sampleText)
+    setQuickTask('summarize')
+    appendConsole('Draft reset to the starter workspace.')
+  }
+
   const clearLocalData = () => {
     setHistory([])
     setQuickOutput('')
+    setObjective(defaultObjective)
+    setSourceText(sampleText)
+    setQuickTask('summarize')
     setSteps(createInitialSteps())
     setSelectedWorkbenchPhaseId('final')
     try {
       localStorage.removeItem(historyStorageKey)
+      localStorage.removeItem(draftStorageKey)
       localStorage.removeItem(selectedModelStorageKey)
     } catch {
       // Storage can be unavailable in privacy modes.
@@ -2176,6 +2439,21 @@ function App() {
                     </span>
                   </label>
 
+                  <label className="settings-toggle settings-toggle-wide">
+                    <input
+                      type="checkbox"
+                      checked={settings.autoSaveDrafts}
+                      onChange={(event) =>
+                        updateSettings({ autoSaveDrafts: event.target.checked })
+                      }
+                    />
+                    <span className="toggle-switch" aria-hidden="true"></span>
+                    <span>
+                      <strong>Autosave draft workspace</strong>
+                      <small>Recover the current goal, source, and quick action after refresh.</small>
+                    </span>
+                  </label>
+
                   <label className="settings-field">
                     <span>History limit</span>
                     <select
@@ -2222,6 +2500,10 @@ function App() {
                   >
                     <Trash2 size={16} aria-hidden="true" />
                     <span>Clear runs</span>
+                  </button>
+                  <button className="ghost-button" type="button" onClick={clearDraft}>
+                    <RefreshCcw size={16} aria-hidden="true" />
+                    <span>Reset draft</span>
                   </button>
                 </div>
               </section>
@@ -2457,6 +2739,14 @@ function App() {
             </div>
           </section>
 
+          <ContextGuardPanel
+            activeModel={activeModel}
+            context={contextSnapshot}
+            goalCharacters={goalCharacterCount}
+            sourceCharacters={sourceCharacterCount}
+            systemStats={systemStats}
+          />
+
           <section className="panel-section setup-section">
             <div className="section-title">
               <Wrench size={18} aria-hidden="true" />
@@ -2648,6 +2938,12 @@ function App() {
             onRefresh={refreshSystemStats}
             state={systemStatsState}
             stats={systemStats}
+          />
+
+          <RunQualityPanel
+            checks={runQualityChecks}
+            onCopy={copyRunQuality}
+            score={runQualityScore}
           />
 
           <section className="panel-section">
