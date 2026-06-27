@@ -1046,17 +1046,30 @@ button:disabled {
   border-bottom: 1px solid var(--line);
   display: grid;
   gap: 1px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .phase-progress-item {
   align-items: center;
+  border: 0;
   background: #f8fafc;
+  color: var(--ink);
   display: flex;
+  font: inherit;
   gap: 8px;
   min-height: 48px;
   min-width: 0;
   padding: 8px 10px;
+  text-align: left;
+}
+
+.phase-progress-item:hover,
+.phase-progress-selected {
+  background: color-mix(in srgb, var(--accent) 10%, #ffffff);
+}
+
+.phase-progress-selected {
+  box-shadow: inset 0 -3px 0 var(--accent);
 }
 
 .phase-progress-index {
@@ -1117,6 +1130,117 @@ button:disabled {
   background: #a53f28;
   border-color: #a53f28;
   color: #ffffff;
+}
+
+.phase-progress-final .phase-progress-index {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.phase-review-panel {
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 9px;
+  max-height: 210px;
+  overflow: hidden;
+  padding: 12px 14px;
+  position: relative;
+}
+
+.phase-review-header,
+.phase-review-actions,
+.phase-review-meta {
+  align-items: center;
+  display: flex;
+}
+
+.phase-review-header {
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.phase-review-header h3 {
+  font-size: 16px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.phase-review-actions {
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.phase-review-status {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 5px 9px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.phase-review-done {
+  border-color: rgba(45, 125, 70, 0.35);
+  color: #2d7d46;
+}
+
+.phase-review-active {
+  border-color: rgba(15, 139, 141, 0.35);
+  color: var(--accent);
+}
+
+.phase-review-error {
+  border-color: rgba(216, 90, 58, 0.38);
+  color: #a53f28;
+}
+
+.phase-review-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.phase-review-meta strong {
+  color: var(--accent);
+  flex: 0 0 auto;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.phase-review-panel pre {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #1e293b;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  max-height: 108px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.phase-review-copy-note {
+  background: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 5px 9px;
+  position: absolute;
+  right: 52px;
+  top: 14px;
+  text-transform: uppercase;
 }
 
 .flow-shell {
@@ -1604,9 +1728,11 @@ button:disabled {
 :root[data-theme='dark'] .panel-section,
 :root[data-theme='dark'] .canvas-panel,
 :root[data-theme='dark'] .settings-panel,
+:root[data-theme='dark'] .phase-review-panel,
 :root[data-theme='purple'] .panel-section,
 :root[data-theme='purple'] .canvas-panel,
-:root[data-theme='purple'] .settings-panel {
+:root[data-theme='purple'] .settings-panel,
+:root[data-theme='purple'] .phase-review-panel {
   background: color-mix(in srgb, var(--surface) 96%, transparent);
 }
 
@@ -1625,6 +1751,7 @@ button:disabled {
 :root[data-theme='dark'] .settings-stat,
 :root[data-theme='dark'] .settings-status-item,
 :root[data-theme='dark'] .theme-preview,
+:root[data-theme='dark'] .phase-review-status,
 :root[data-theme='purple'] .topbar-chip,
 :root[data-theme='purple'] .status-pill,
 :root[data-theme='purple'] .command-metric,
@@ -1639,7 +1766,8 @@ button:disabled {
 :root[data-theme='purple'] .settings-readonly,
 :root[data-theme='purple'] .settings-stat,
 :root[data-theme='purple'] .settings-status-item,
-:root[data-theme='purple'] .theme-preview {
+:root[data-theme='purple'] .theme-preview,
+:root[data-theme='purple'] .phase-review-status {
   background: var(--surface);
   border-color: var(--line);
   color: var(--ink);
@@ -1661,16 +1789,25 @@ button:disabled {
 :root[data-theme='dark'] .settings-toggle,
 :root[data-theme='dark'] .phase-progress-item,
 :root[data-theme='dark'] .run-button,
+:root[data-theme='dark'] .phase-review-panel pre,
 :root[data-theme='purple'] .readiness-item,
 :root[data-theme='purple'] .template-button,
 :root[data-theme='purple'] .setup-item,
 :root[data-theme='purple'] .theme-option,
 :root[data-theme='purple'] .settings-toggle,
 :root[data-theme='purple'] .phase-progress-item,
-:root[data-theme='purple'] .run-button {
+:root[data-theme='purple'] .run-button,
+:root[data-theme='purple'] .phase-review-panel pre {
   background: var(--surface-soft);
   border-color: var(--line);
   color: var(--ink);
+}
+
+:root[data-theme='dark'] .phase-progress-item:hover,
+:root[data-theme='dark'] .phase-progress-selected,
+:root[data-theme='purple'] .phase-progress-item:hover,
+:root[data-theme='purple'] .phase-progress-selected {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-soft));
 }
 
 :root[data-theme='dark'] .mode-button,
@@ -1711,6 +1848,13 @@ button:disabled {
   background: var(--surface);
   border-color: var(--line);
   color: var(--muted);
+}
+
+:root[data-theme='dark'] .phase-progress-final .phase-progress-index,
+:root[data-theme='purple'] .phase-progress-final .phase-progress-index {
+  background: var(--surface-strong);
+  border-color: var(--line-strong);
+  color: var(--surface-text-on-strong);
 }
 
 :root[data-theme='dark'] .flow-shell {

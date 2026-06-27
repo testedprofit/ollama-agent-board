@@ -8,6 +8,7 @@ Everything runs locally. The browser app talks to Ollama through a local proxy p
 
 - Finds locally installed Ollama models.
 - Runs a visual five-phase agent loop: Intake, Strategy, Workbench, Review, Ship.
+- Adds review buttons for every phase so you can inspect what each phase outputs and feeds forward.
 - Shows a Matrix-style workbench while the agent is thinking, then writes the finished output into the same window.
 - Provides reusable workflows for inbox triage, study guides, code review, and launch briefs.
 - Runs quick actions against pasted text: summarize, extract tasks, rewrite, and explain.

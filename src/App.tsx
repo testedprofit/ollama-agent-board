@@ -179,6 +179,14 @@ type AgentWorkbenchWindowProps = {
 }
 
 type PhaseProgressRailProps = {
+  onSelectPhase: (phaseId: WorkbenchPhaseId) => void
+  selectedPhaseId: WorkbenchPhaseId
+  steps: AgentStep[]
+}
+
+type PhaseReviewPanelProps = {
+  output: string
+  selectedPhaseId: WorkbenchPhaseId
   steps: AgentStep[]
 }
 
@@ -737,23 +745,117 @@ function AgentNode({ data }: NodeProps<AgentNodeType>) {
   )
 }
 
-function PhaseProgressRail({ steps }: PhaseProgressRailProps) {
+function PhaseProgressRail({
+  onSelectPhase,
+  selectedPhaseId,
+  steps,
+}: PhaseProgressRailProps) {
   return (
-    <div className="phase-progress-rail" aria-label="Agent run progress">
+    <div className="phase-progress-rail" aria-label="Review agent phase output">
+      <button
+        className={`phase-progress-item phase-progress-final ${
+          selectedPhaseId === 'final' ? 'phase-progress-selected' : ''
+        }`}
+        type="button"
+        aria-pressed={selectedPhaseId === 'final'}
+        onClick={() => onSelectPhase('final')}
+      >
+        <span className="phase-progress-index">
+          <CheckCircle2 size={13} aria-hidden="true" />
+        </span>
+        <div>
+          <strong>Final</strong>
+          <span>Review all</span>
+        </div>
+      </button>
       {agentPhases.map((phase, index) => {
         const step = steps.find((candidate) => candidate.id === phase.id)
         const status = step?.status ?? 'idle'
         return (
-          <div className={`phase-progress-item phase-progress-${status}`} key={phase.id}>
+          <button
+            className={`phase-progress-item phase-progress-${status} ${
+              selectedPhaseId === phase.id ? 'phase-progress-selected' : ''
+            }`}
+            type="button"
+            key={phase.id}
+            aria-pressed={selectedPhaseId === phase.id}
+            onClick={() => onSelectPhase(phase.id)}
+          >
             <span className="phase-progress-index">{index + 1}</span>
             <div>
               <strong>{phase.title}</strong>
               <span>{getPhaseStatusLabel(status)}</span>
             </div>
-          </div>
+          </button>
         )
       })}
     </div>
+  )
+}
+
+function PhaseReviewPanel({ output, selectedPhaseId, steps }: PhaseReviewPanelProps) {
+  const [copied, setCopied] = useState(false)
+  const selectedStep =
+    selectedPhaseId === 'final'
+      ? undefined
+      : steps.find((step) => step.id === selectedPhaseId)
+  const selectedPhase =
+    selectedPhaseId === 'final'
+      ? undefined
+      : agentPhases.find((phase) => phase.id === selectedPhaseId)
+  const phaseIndex = selectedPhase
+    ? agentPhases.findIndex((phase) => phase.id === selectedPhase.id)
+    : -1
+  const nextPhase = phaseIndex >= 0 ? agentPhases[phaseIndex + 1] : undefined
+  const selectedStatus = selectedStep?.status ?? 'idle'
+  const title = selectedPhase?.title ?? 'Final output'
+  const subtitle = selectedPhase
+    ? `${selectedPhase.role} feeds ${nextPhase?.title ?? 'the final answer'}`
+    : 'Combined output from completed phases'
+  const reviewText =
+    selectedPhaseId === 'final'
+      ? output || 'No completed phase output yet.'
+      : selectedStep?.result ||
+        (selectedStatus === 'active'
+          ? `${selectedPhase?.title ?? 'This phase'} is running now. Its output will appear here when the local model responds.`
+          : selectedPhase?.prompt ?? 'No phase selected.')
+  const hasModelOutput = selectedPhaseId === 'final' ? Boolean(output) : Boolean(selectedStep?.result)
+
+  const copyReviewText = async () => {
+    if (await copyTextToClipboard(reviewText)) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1200)
+    }
+  }
+
+  return (
+    <section className="phase-review-panel" aria-label="Selected phase review">
+      <div className="phase-review-header">
+        <div>
+          <p className="eyebrow">Phase review</p>
+          <h3>{title}</h3>
+        </div>
+        <div className="phase-review-actions">
+          <span className={`phase-review-status phase-review-${selectedStatus}`}>
+            {selectedPhaseId === 'final'
+              ? hasModelOutput
+                ? 'Ready'
+                : 'Waiting'
+              : getPhaseStatusLabel(selectedStatus)}
+          </span>
+          <button className="mini-icon-button" type="button" onClick={copyReviewText}>
+            <Copy size={14} aria-hidden="true" />
+            <span className="visually-hidden">Copy selected phase output</span>
+          </button>
+        </div>
+      </div>
+      <div className="phase-review-meta">
+        <span>{subtitle}</span>
+        <strong>{hasModelOutput ? 'Model output' : 'Planned prompt'}</strong>
+      </div>
+      <pre>{reviewText}</pre>
+      {copied ? <span className="phase-review-copy-note">Copied</span> : null}
+    </section>
   )
 }
 
@@ -2274,7 +2376,16 @@ function App() {
               </button>
             </div>
           </div>
-          <PhaseProgressRail steps={steps} />
+          <PhaseProgressRail
+            onSelectPhase={setSelectedWorkbenchPhaseId}
+            selectedPhaseId={selectedWorkbenchPhaseId}
+            steps={steps}
+          />
+          <PhaseReviewPanel
+            output={workbenchOutput}
+            selectedPhaseId={selectedWorkbenchPhaseId}
+            steps={steps}
+          />
           <div className="flow-shell">
             <ReactFlow
               nodes={nodes}
