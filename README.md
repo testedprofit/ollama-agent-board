@@ -32,6 +32,18 @@ ollama pull llama3.2
 
 Open a new terminal after installing Ollama or Node.js so the commands are on your PATH.
 
+## Platform installers
+
+Separate install/run folders are available for each target:
+
+| Target | Folder | Start here |
+| --- | --- | --- |
+| Windows | `platforms/windows` | `powershell -ExecutionPolicy Bypass -File .\platforms\windows\install.ps1 -InstallMissing` |
+| Linux | `platforms/linux` | `bash platforms/linux/install.sh` |
+| DGX Spark / DGX OS | `platforms/dgx-os` | `bash platforms/dgx-os/install.sh` |
+
+Linux and DGX OS keep their downloaded Node.js runtime inside the platform folder under `.runtime/`. The app still uses Ollama through the local HTTP API, so ARM64 and DGX systems can run local Ollama models without changing the React app code. An explicit ARM64-only profile is also available in `platforms/linux-arm64`.
+
 ## Quick Windows setup
 
 ```bash
