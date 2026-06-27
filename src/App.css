@@ -491,6 +491,24 @@ textarea {
   margin-bottom: 0;
 }
 
+.stats-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.stats-history-button {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 0 9px;
+}
+
+.stats-history-button-active,
+.mini-icon-button-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
 .stats-status-row,
 .stats-meter-top {
   align-items: center;
@@ -596,13 +614,113 @@ textarea {
 .stats-meta-grid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .stats-meta-grid div {
   display: grid;
   gap: 3px;
   padding: 9px;
+}
+
+.stats-history-panel {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.stats-history-header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.stats-history-header strong {
+  font-size: 13px;
+}
+
+.stats-history-header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.usage-history-chart {
+  display: block;
+  overflow: visible;
+  width: 100%;
+}
+
+.usage-grid-line {
+  stroke: color-mix(in srgb, var(--muted) 18%, transparent);
+  stroke-width: 1;
+}
+
+.usage-axis-label {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  text-anchor: end;
+}
+
+.usage-line {
+  fill: none;
+  stroke: var(--usage-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.usage-latest-dot {
+  fill: var(--usage-color);
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.usage-history-legend {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.usage-history-legend span {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 6px;
+  min-width: 0;
+}
+
+.usage-history-legend i {
+  background: var(--usage-color);
+  border-radius: 999px;
+  flex: 0 0 auto;
+  height: 8px;
+  width: 8px;
+}
+
+.stats-history-empty {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 92px;
+}
+
+.stats-history-empty svg {
+  color: var(--accent);
 }
 
 .context-guard-panel,
@@ -2799,6 +2917,8 @@ button:disabled {
 :root[data-theme='dark'] .source-file-chip,
 :root[data-theme='dark'] .stats-meter,
 :root[data-theme='dark'] .stats-meta-grid div,
+:root[data-theme='dark'] .stats-history-panel,
+:root[data-theme='dark'] .stats-history-empty,
 :root[data-theme='dark'] .context-gauge,
 :root[data-theme='dark'] .guardrail-grid div,
 :root[data-theme='dark'] .quality-score-row,
@@ -2822,6 +2942,8 @@ button:disabled {
 :root[data-theme='purple'] .source-file-chip,
 :root[data-theme='purple'] .stats-meter,
 :root[data-theme='purple'] .stats-meta-grid div,
+:root[data-theme='purple'] .stats-history-panel,
+:root[data-theme='purple'] .stats-history-empty,
 :root[data-theme='purple'] .context-gauge,
 :root[data-theme='purple'] .guardrail-grid div,
 :root[data-theme='purple'] .quality-score-row,
@@ -2866,6 +2988,15 @@ button:disabled {
 
 :root[data-theme='dark'] .mode-button.active,
 :root[data-theme='purple'] .mode-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+:root[data-theme='dark'] .stats-history-button-active,
+:root[data-theme='dark'] .mini-icon-button-active,
+:root[data-theme='purple'] .stats-history-button-active,
+:root[data-theme='purple'] .mini-icon-button-active {
   background: var(--accent);
   border-color: var(--accent);
   color: #ffffff;
@@ -3107,6 +3238,8 @@ button:disabled {
 :root[data-theme='matrix'] .source-file-chip,
 :root[data-theme='matrix'] .stats-meter,
 :root[data-theme='matrix'] .stats-meta-grid div,
+:root[data-theme='matrix'] .stats-history-panel,
+:root[data-theme='matrix'] .stats-history-empty,
 :root[data-theme='matrix'] .context-gauge,
 :root[data-theme='matrix'] .guardrail-grid div,
 :root[data-theme='matrix'] .quality-score-row,
@@ -3178,6 +3311,13 @@ button:disabled {
 }
 
 :root[data-theme='matrix'] .mode-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #001604;
+}
+
+:root[data-theme='matrix'] .stats-history-button-active,
+:root[data-theme='matrix'] .mini-icon-button-active {
   background: var(--accent);
   border-color: var(--accent);
   color: #001604;
@@ -3584,6 +3724,10 @@ button:disabled {
   .stats-meta-grid,
   .chart-meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .usage-history-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .guardrail-grid {

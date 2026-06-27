@@ -15,7 +15,7 @@ Everything runs locally. The browser app talks to Ollama through a local proxy p
 - Runs quick actions against pasted text: summarize, extract tasks, rewrite, and explain.
 - Accepts dropped or browsed local text files, CSV, TSV, JSON, Markdown, logs, and simple code files into the Source panel.
 - Generates local bar, line, and donut charts from CSV, TSV, JSON, or label-value source data.
-- Shows local PC CPU, memory, and Ollama process load while models are running.
+- Shows local PC CPU, RAM, GPU/VRAM, and Ollama process load while models are running, with a click-to-open usage-over-time chart.
 - Autosaves the current goal/source draft locally so refreshes do not wipe work.
 - Adds context pressure, model-fit guardrails, and a run QA score before shipping output.
 - Includes a Settings tab for model defaults, generation profile, Light/Dark/Purple/Matrix themes, workbench display, history, imports, exports, diagnostics, and local data cleanup.
@@ -103,6 +103,8 @@ OLLAMA_ALLOW_REMOTE=0
 ```
 
 If your system has `OLLAMA_HOST=0.0.0.0:11434`, the app normalizes that bind address to `http://127.0.0.1:11434` for local requests.
+
+GPU telemetry is best-effort and local-only. The stats panel uses `nvidia-smi` first, which works well on NVIDIA Windows, Linux, ARM64, and DGX OS systems when NVIDIA drivers expose it. On Windows without `nvidia-smi`, the app falls back to Windows GPU engine counters. Systems that do not expose GPU counters still run normally and show GPU telemetry as unavailable.
 
 The proxy is local-only by default and only forwards:
 

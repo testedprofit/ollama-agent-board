@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 const modelProcessPattern = /ollama|llama/i
 const cpuCount = Math.max(os.cpus().length, 1)
+const mib = 1024 * 1024
 
 let previousCpuSnapshot
 let previousModelCpuSnapshot
@@ -16,6 +17,11 @@ function round(value, digits = 1) {
 
 function clampPercent(value) {
   return Math.min(100, Math.max(0, round(value)))
+}
+
+function parseFiniteNumber(value) {
+  const parsed = Number(String(value ?? '').trim())
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function readCpuSnapshot() {
@@ -186,13 +192,178 @@ async function readModelProcesses() {
   }
 }
 
+function summarizeGpuAdapters(adapters, provider) {
+  const percentValues = adapters
+    .map((adapter) => adapter.percent)
+    .filter((value) => typeof value === 'number' && Number.isFinite(value))
+  const usedValues = adapters
+    .map((adapter) => adapter.memoryUsedBytes)
+    .filter((value) => typeof value === 'number' && Number.isFinite(value))
+  const totalValues = adapters
+    .map((adapter) => adapter.memoryTotalBytes)
+    .filter((value) => typeof value === 'number' && Number.isFinite(value))
+
+  return {
+    adapters,
+    detected: adapters.length > 0,
+    memoryTotalBytes:
+      totalValues.length > 0 ? totalValues.reduce((total, value) => total + value, 0) : null,
+    memoryUsedBytes:
+      usedValues.length > 0 ? usedValues.reduce((total, value) => total + value, 0) : null,
+    names: [...new Set(adapters.map((adapter) => adapter.name).filter(Boolean))].sort(),
+    percent: percentValues.length > 0 ? clampPercent(Math.max(...percentValues)) : null,
+    provider,
+  }
+}
+
+async function readNvidiaGpuStats() {
+  const { stdout } = await execFileAsync(
+    'nvidia-smi',
+    [
+      '--query-gpu=name,utilization.gpu,memory.used,memory.total',
+      '--format=csv,noheader,nounits',
+    ],
+    {
+      maxBuffer: 1024 * 1024,
+      timeout: 3000,
+      windowsHide: true,
+    },
+  )
+  const adapters = stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name = 'NVIDIA GPU', percent, memoryUsedMiB, memoryTotalMiB] = line
+        .split(',')
+        .map((value) => value.trim())
+      const parsedMemoryUsed = parseFiniteNumber(memoryUsedMiB)
+      const parsedMemoryTotal = parseFiniteNumber(memoryTotalMiB)
+
+      return {
+        memoryTotalBytes:
+          parsedMemoryTotal === null ? null : Math.max(0, parsedMemoryTotal) * mib,
+        memoryUsedBytes:
+          parsedMemoryUsed === null ? null : Math.max(0, parsedMemoryUsed) * mib,
+        name,
+        percent: parseFiniteNumber(percent),
+      }
+    })
+
+  if (adapters.length === 0) {
+    throw new Error('nvidia-smi did not report a GPU.')
+  }
+
+  return summarizeGpuAdapters(adapters, 'nvidia-smi')
+}
+
+async function readWindowsGpuStats() {
+  const command = [
+    '$counter = $null;',
+    "try { $counter = Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop } catch { }",
+    '$percent = $null;',
+    'if ($null -ne $counter) {',
+    '$sum = ($counter.CounterSamples | Measure-Object -Property CookedValue -Sum).Sum;',
+    'if ($null -ne $sum) { $percent = [Math]::Min(100, [Math]::Max(0, [double]$sum)) }',
+    '}',
+    '$controllers = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |',
+    'ForEach-Object {',
+    '[pscustomobject]@{',
+    'Name = $_.Name;',
+    'AdapterRAM = if ($null -eq $_.AdapterRAM) { $null } else { [int64]$_.AdapterRAM }',
+    '}',
+    '});',
+    '[pscustomobject]@{ Percent = $percent; Controllers = $controllers } | ConvertTo-Json -Depth 4 -Compress',
+  ].join(' ')
+
+  const { stdout } = await execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    {
+      maxBuffer: 1024 * 1024,
+      timeout: 3000,
+      windowsHide: true,
+    },
+  )
+  const parsed = JSON.parse(stdout.trim() || '{}')
+  const controllers = normalizeProcessRows(parsed.Controllers)
+  const aggregatePercent = parseFiniteNumber(parsed.Percent)
+  const adapters = controllers.map((controller, index) => {
+    const memoryTotalBytes = parseFiniteNumber(controller.AdapterRAM)
+
+    return {
+      memoryTotalBytes:
+        memoryTotalBytes === null || memoryTotalBytes <= 0 ? null : memoryTotalBytes,
+      memoryUsedBytes: null,
+      name: String(controller.Name || `Windows GPU ${index + 1}`),
+      percent: null,
+    }
+  })
+  const summary = summarizeGpuAdapters(
+    adapters.length > 0
+      ? adapters
+      : [
+          {
+            memoryTotalBytes: null,
+            memoryUsedBytes: null,
+            name: 'Windows GPU engine',
+            percent: aggregatePercent,
+          },
+        ],
+    'windows-counter',
+  )
+
+  return {
+    ...summary,
+    detected: summary.detected || aggregatePercent !== null,
+    percent: aggregatePercent === null ? summary.percent : clampPercent(aggregatePercent),
+  }
+}
+
+async function readGpuStats() {
+  try {
+    return await readNvidiaGpuStats()
+  } catch (nvidiaError) {
+    if (process.platform === 'win32') {
+      try {
+        return await readWindowsGpuStats()
+      } catch (windowsError) {
+        return {
+          adapters: [],
+          detected: false,
+          error: windowsError instanceof Error ? windowsError.message : String(windowsError),
+          memoryTotalBytes: null,
+          memoryUsedBytes: null,
+          names: [],
+          percent: null,
+          provider: 'unavailable',
+        }
+      }
+    }
+
+    return {
+      adapters: [],
+      detected: false,
+      error: nvidiaError instanceof Error ? nvidiaError.message : String(nvidiaError),
+      memoryTotalBytes: null,
+      memoryUsedBytes: null,
+      names: [],
+      percent: null,
+      provider: 'unavailable',
+    }
+  }
+}
+
 export async function readSystemStats() {
   const cpuSnapshot = readCpuSnapshot()
   const totalBytes = os.totalmem()
   const freeBytes = os.freemem()
   const usedBytes = Math.max(0, totalBytes - freeBytes)
   const loadAverage = os.loadavg()
-  const modelProcesses = await readModelProcesses()
+  const [modelProcesses, gpuStats] = await Promise.all([
+    readModelProcesses(),
+    readGpuStats(),
+  ])
 
   return {
     sampledAt: new Date().toISOString(),
@@ -212,6 +383,7 @@ export async function readSystemStats() {
       usedBytes,
       usedPercent: clampPercent((usedBytes / totalBytes) * 100),
     },
+    gpu: gpuStats,
     ollama: modelProcesses,
   }
 }

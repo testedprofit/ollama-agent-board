@@ -151,6 +151,13 @@ type OllamaErrorResponse = {
   error?: string
 }
 
+type GpuAdapterStats = {
+  memoryTotalBytes: number | null
+  memoryUsedBytes: number | null
+  name: string
+  percent: number | null
+}
+
 type SystemStatsResponse = {
   sampledAt: string
   platform: {
@@ -169,6 +176,16 @@ type SystemStatsResponse = {
     usedBytes: number
     usedPercent: number
   }
+  gpu: {
+    adapters: GpuAdapterStats[]
+    detected: boolean
+    error?: string
+    memoryTotalBytes: number | null
+    memoryUsedBytes: number | null
+    names: string[]
+    percent: number | null
+    provider: string
+  }
   ollama: {
     cpuPercent: number | null
     detected: boolean
@@ -179,6 +196,16 @@ type SystemStatsResponse = {
     processCount: number
   }
 }
+
+type SystemStatsHistorySample = {
+  cpuPercent: number | null
+  gpuPercent: number | null
+  memoryPercent: number | null
+  ollamaCpuPercent: number | null
+  sampledAt: string
+}
+
+type UsageMetricKey = Exclude<keyof SystemStatsHistorySample, 'sampledAt'>
 
 type SavedRun = {
   id: string
@@ -279,10 +306,17 @@ type StatsMeterProps = {
 }
 
 type SystemStatsPanelProps = {
+  history: SystemStatsHistorySample[]
+  isHistoryVisible: boolean
   isRunning: boolean
   onRefresh: () => void
+  onToggleHistory: () => void
   state: ConnectionState
   stats: SystemStatsResponse | null
+}
+
+type UsageHistoryChartProps = {
+  samples: SystemStatsHistorySample[]
 }
 
 type ContextGuardPanelProps = {
@@ -509,6 +543,7 @@ const selectedModelStorageKey = 'ollama-agent-board:selected-model'
 const settingsStorageKey = 'ollama-agent-board:settings'
 const modelRefreshTimeoutMs = 10000
 const maxModelCompareSelections = 4
+const maxSystemStatsHistorySamples = 120
 const defaultAppSettings: AppSettings = {
   autoSaveDrafts: true,
   autoSelectModel: true,
@@ -803,6 +838,65 @@ function formatDuration(seconds?: number): string {
   }
 
   return `${Math.max(minutes, 1)}m`
+}
+
+function normalizePercent(value?: number | null): number | null {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(100, Math.max(0, value))
+    : null
+}
+
+function createSystemStatsHistorySample(
+  stats: SystemStatsResponse,
+): SystemStatsHistorySample {
+  return {
+    cpuPercent: normalizePercent(stats.cpu.percent),
+    gpuPercent: normalizePercent(stats.gpu.percent),
+    memoryPercent: normalizePercent(stats.memory.usedPercent),
+    ollamaCpuPercent: normalizePercent(stats.ollama.cpuPercent),
+    sampledAt: stats.sampledAt,
+  }
+}
+
+function formatGpuMemory(stats?: SystemStatsResponse | null): string {
+  if (!stats?.gpu.memoryTotalBytes) {
+    return ''
+  }
+
+  const usedBytes =
+    typeof stats.gpu.memoryUsedBytes === 'number' && Number.isFinite(stats.gpu.memoryUsedBytes)
+      ? stats.gpu.memoryUsedBytes
+      : 0
+
+  return `${formatBytes(usedBytes)} / ${formatBytes(stats.gpu.memoryTotalBytes)} VRAM`
+}
+
+function getGpuDetail(stats?: SystemStatsResponse | null): string {
+  if (!stats) {
+    return 'Sampling GPU telemetry'
+  }
+
+  if (!stats.gpu.detected) {
+    return 'GPU telemetry unavailable on this host'
+  }
+
+  const memoryLabel = formatGpuMemory(stats)
+  const providerLabel =
+    stats.gpu.provider === 'nvidia-smi'
+      ? 'NVIDIA telemetry'
+      : stats.gpu.provider === 'windows-counter'
+        ? 'Windows GPU counters'
+        : 'GPU telemetry'
+
+  return memoryLabel ? `${memoryLabel} - ${providerLabel}` : providerLabel
+}
+
+function getGpuName(stats?: SystemStatsResponse | null): string {
+  if (!stats?.gpu.detected) {
+    return 'No GPU telemetry'
+  }
+
+  return stats.gpu.names.join(', ') || stats.gpu.provider
 }
 
 function formatCompactNumber(value: number): string {
@@ -1448,6 +1542,138 @@ function AgentWorkbenchWindow({
   )
 }
 
+function UsageHistoryChart({ samples }: UsageHistoryChartProps) {
+  const recentSamples = samples.slice(-60)
+  const chartWidth = 340
+  const chartHeight = 154
+  const plotLeft = 28
+  const plotRight = 12
+  const plotTop = 12
+  const plotBottom = 24
+  const plotWidth = chartWidth - plotLeft - plotRight
+  const plotHeight = chartHeight - plotTop - plotBottom
+  const series: Array<{
+    color: string
+    key: UsageMetricKey
+    label: string
+  }> = [
+    { color: '#0f8b8d', key: 'cpuPercent', label: 'CPU' },
+    { color: '#d85a3a', key: 'memoryPercent', label: 'RAM' },
+    { color: '#6d5dfc', key: 'gpuPercent', label: 'GPU' },
+    { color: '#2d7d46', key: 'ollamaCpuPercent', label: 'Ollama' },
+  ]
+  const latestSample = recentSamples[recentSamples.length - 1]
+  const sampledLabel = latestSample
+    ? timeFormatter.format(new Date(latestSample.sampledAt))
+    : 'Waiting'
+  const getPoint = (
+    sample: SystemStatsHistorySample,
+    index: number,
+    key: UsageMetricKey,
+  ) => {
+    const value = sample[key]
+
+    if (typeof value !== 'number') {
+      return ''
+    }
+
+    const x =
+      plotLeft +
+      (recentSamples.length <= 1
+        ? plotWidth
+        : (plotWidth / (recentSamples.length - 1)) * index)
+    const y = plotTop + plotHeight - (value / 100) * plotHeight
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }
+
+  return (
+    <div className="stats-history-panel">
+      <div className="stats-history-header">
+        <strong>{recentSamples.length} samples</strong>
+        <span>Updated {sampledLabel}</span>
+      </div>
+
+      {recentSamples.length > 1 ? (
+        <>
+          <svg
+            className="usage-history-chart"
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            role="img"
+            aria-label="Usage over time chart"
+          >
+            {[0, 25, 50, 75, 100].map((tick) => {
+              const y = plotTop + plotHeight - (tick / 100) * plotHeight
+              return (
+                <g key={tick}>
+                  <line
+                    className="usage-grid-line"
+                    x1={plotLeft}
+                    x2={chartWidth - plotRight}
+                    y1={y}
+                    y2={y}
+                  />
+                  <text className="usage-axis-label" x={plotLeft - 7} y={y + 3}>
+                    {tick}
+                  </text>
+                </g>
+              )
+            })}
+            {series.map((item) => {
+              const points = recentSamples
+                .map((sample, index) => getPoint(sample, index, item.key))
+                .filter(Boolean)
+                .join(' ')
+              const latestValue = latestSample?.[item.key]
+              const latestPoint =
+                latestSample && typeof latestValue === 'number'
+                  ? getPoint(latestSample, recentSamples.length - 1, item.key)
+                  : ''
+              const [latestX, latestY] = latestPoint
+                .split(',')
+                .map((value) => Number(value))
+
+              return (
+                <g key={item.key}>
+                  {points ? (
+                    <polyline
+                      className="usage-line"
+                      points={points}
+                      style={{ '--usage-color': item.color } as CSSProperties}
+                    />
+                  ) : null}
+                  {Number.isFinite(latestX) && Number.isFinite(latestY) ? (
+                    <circle
+                      className="usage-latest-dot"
+                      cx={latestX}
+                      cy={latestY}
+                      r="3.5"
+                      style={{ '--usage-color': item.color } as CSSProperties}
+                    />
+                  ) : null}
+                </g>
+              )
+            })}
+          </svg>
+
+          <div className="usage-history-legend" aria-label="Usage chart legend">
+            {series.map((item) => (
+              <span key={item.key}>
+                <i style={{ '--usage-color': item.color } as CSSProperties}></i>
+                {item.label}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="stats-history-empty">
+          <ChartLine size={18} aria-hidden="true" />
+          <span>Collecting local samples</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StatsMeter({ detail, label, percent, value }: StatsMeterProps) {
   const safePercent =
     typeof percent === 'number' && Number.isFinite(percent)
@@ -1469,8 +1695,11 @@ function StatsMeter({ detail, label, percent, value }: StatsMeterProps) {
 }
 
 function SystemStatsPanel({
+  history,
+  isHistoryVisible,
   isRunning,
   onRefresh,
+  onToggleHistory,
   state,
   stats,
 }: SystemStatsPanelProps) {
@@ -1483,6 +1712,8 @@ function SystemStatsPanel({
   const statsStateLabel =
     state === 'checking' ? 'Sampling' : state === 'online' ? 'Live' : 'Offline'
   const sampledAt = stats ? timeFormatter.format(new Date(stats.sampledAt)) : 'Waiting'
+  const gpuName = getGpuName(stats)
+  const gpuValue = stats?.gpu.detected ? formatPercent(stats.gpu.percent) : 'Unavailable'
 
   return (
     <section className="panel-section stats-panel">
@@ -1491,15 +1722,31 @@ function SystemStatsPanel({
           <Activity size={18} aria-hidden="true" />
           <h2>PC stats</h2>
         </div>
-        <button
-          className="mini-icon-button"
-          type="button"
-          onClick={onRefresh}
-          aria-label="Refresh PC stats"
-          title="Refresh PC stats"
-        >
-          <RefreshCcw size={14} aria-hidden="true" />
-        </button>
+        <div className="stats-actions">
+          <button
+            className={
+              isHistoryVisible
+                ? 'ghost-button stats-history-button stats-history-button-active'
+                : 'ghost-button stats-history-button'
+            }
+            type="button"
+            onClick={onToggleHistory}
+            aria-label="Toggle usage over time"
+            title="Usage over time"
+          >
+            <ChartLine size={14} aria-hidden="true" />
+            <span>History</span>
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            onClick={onRefresh}
+            aria-label="Refresh PC stats"
+            title="Refresh PC stats"
+          >
+            <RefreshCcw size={14} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       <div className="stats-status-row">
@@ -1517,7 +1764,7 @@ function SystemStatsPanel({
           detail={stats ? `${stats.cpu.cores} logical cores` : 'Sampling local CPU'}
         />
         <StatsMeter
-          label="Memory"
+          label="RAM"
           value={formatPercent(stats?.memory.usedPercent)}
           percent={stats?.memory.usedPercent}
           detail={
@@ -1525,6 +1772,12 @@ function SystemStatsPanel({
               ? `${formatBytes(stats.memory.usedBytes)} / ${formatBytes(stats.memory.totalBytes)}`
               : 'Sampling system memory'
           }
+        />
+        <StatsMeter
+          label="GPU"
+          value={gpuValue}
+          percent={stats?.gpu.percent}
+          detail={getGpuDetail(stats)}
         />
         <StatsMeter
           label="Ollama load"
@@ -1538,6 +1791,8 @@ function SystemStatsPanel({
         />
       </div>
 
+      {isHistoryVisible ? <UsageHistoryChart samples={history} /> : null}
+
       <div className="stats-meta-grid">
         <div>
           <span>Processes</span>
@@ -1548,6 +1803,10 @@ function SystemStatsPanel({
           <strong>
             {stats ? `${stats.platform.os} ${stats.platform.arch}` : 'Local'}
           </strong>
+        </div>
+        <div>
+          <span>GPU</span>
+          <strong title={gpuName}>{gpuName}</strong>
         </div>
         <div>
           <span>Uptime</span>
@@ -2055,6 +2314,10 @@ function App() {
   const [systemStatsState, setSystemStatsState] =
     useState<ConnectionState>('checking')
   const [systemStats, setSystemStats] = useState<SystemStatsResponse | null>(null)
+  const [systemStatsHistory, setSystemStatsHistory] = useState<
+    SystemStatsHistorySample[]
+  >([])
+  const [isStatsHistoryVisible, setIsStatsHistoryVisible] = useState(false)
   const [objective, setObjective] = useState(
     initialDraft?.objective || defaultObjective,
   )
@@ -2450,7 +2713,13 @@ function App() {
     setSystemStatsState((current) => (current === 'online' ? current : 'checking'))
 
     try {
-      setSystemStats(await fetchSystemStats())
+      const nextStats = await fetchSystemStats()
+      setSystemStats(nextStats)
+      setSystemStatsHistory((current) =>
+        [...current, createSystemStatsHistorySample(nextStats)].slice(
+          -maxSystemStatsHistorySamples,
+        ),
+      )
       setSystemStatsState('online')
     } catch {
       setSystemStatsState('offline')
@@ -3889,8 +4158,11 @@ function App() {
 
         <aside className="output-panel">
           <SystemStatsPanel
+            history={systemStatsHistory}
+            isHistoryVisible={isStatsHistoryVisible}
             isRunning={isRunning}
             onRefresh={refreshSystemStats}
+            onToggleHistory={() => setIsStatsHistoryVisible((current) => !current)}
             state={systemStatsState}
             stats={systemStats}
           />
