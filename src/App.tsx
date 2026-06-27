@@ -127,6 +127,17 @@ type OllamaModel = {
   size?: number
 }
 
+type ModelCompareStatus = 'idle' | 'running' | 'done' | 'error'
+
+type ModelCompareRun = {
+  durationMs?: number
+  error?: string
+  id: string
+  model: string
+  output: string
+  status: ModelCompareStatus
+}
+
 type TagsResponse = {
   models?: OllamaModel[]
 }
@@ -294,6 +305,19 @@ type ChartPanelProps = {
   onChartTypeChange: (type: ChartType) => void
   onCopy: () => void
   onExport: () => void
+}
+
+type ModelComparePanelProps = {
+  isBusy: boolean
+  isComparing: boolean
+  maxSelections: number
+  models: OllamaModel[]
+  onCopy: () => void
+  onRun: () => void
+  onToggleModel: (modelName: string) => void
+  quickTask: QuickTask
+  runs: ModelCompareRun[]
+  selectedModelNames: string[]
 }
 
 const matrixStreams = [
@@ -484,6 +508,7 @@ const draftStorageKey = 'ollama-agent-board:draft'
 const selectedModelStorageKey = 'ollama-agent-board:selected-model'
 const settingsStorageKey = 'ollama-agent-board:settings'
 const modelRefreshTimeoutMs = 10000
+const maxModelCompareSelections = 4
 const defaultAppSettings: AppSettings = {
   autoSaveDrafts: true,
   autoSelectModel: true,
@@ -979,6 +1004,88 @@ function composeAgentOutput(steps: AgentStep[]): string {
       return `## ${phase?.title ?? step.id}\n${step.result}`
     })
     .join('\n\n')
+}
+
+function getModelCompareStatusLabel(status: ModelCompareStatus): string {
+  if (status === 'running') {
+    return 'Running'
+  }
+
+  if (status === 'done') {
+    return 'Done'
+  }
+
+  if (status === 'error') {
+    return 'Error'
+  }
+
+  return 'Queued'
+}
+
+function formatModelCompareDuration(durationMs?: number): string {
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs)) {
+    return 'pending'
+  }
+
+  if (durationMs < 1000) {
+    return `${Math.max(1, Math.round(durationMs))} ms`
+  }
+
+  const seconds = durationMs / 1000
+  return seconds < 10 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`
+}
+
+function escapeMarkdownTableValue(value: string): string {
+  return value.replaceAll('|', '\\|').replace(/\s+/g, ' ').trim() || 'none'
+}
+
+function createModelCompareMarkdown(
+  runs: ModelCompareRun[],
+  quickTask: QuickTask,
+  objective: string,
+  createdAt: Date,
+): string {
+  const objectiveLabel = objective.trim() || 'Untitled local AI task'
+  const tableRows = runs.map((run) =>
+    [
+      escapeMarkdownTableValue(run.model),
+      getModelCompareStatusLabel(run.status),
+      formatModelCompareDuration(run.durationMs),
+      run.output.length.toLocaleString(),
+    ].join(' | '),
+  )
+  const responseBlocks = runs.map((run) => {
+    const body =
+      run.error ||
+      run.output ||
+      (run.status === 'running'
+        ? 'Waiting for this local model to respond.'
+        : 'Queued for sequential local comparison.')
+
+    return [
+      `## ${run.model}`,
+      '',
+      `Status: ${getModelCompareStatusLabel(run.status)}`,
+      `Time: ${formatModelCompareDuration(run.durationMs)}`,
+      '',
+      body,
+    ].join('\n')
+  })
+
+  return [
+    '# Model comparison',
+    '',
+    `Task: ${quickTaskLabels[quickTask]}`,
+    `Goal: ${objectiveLabel}`,
+    `Created: ${createdAt.toLocaleString()}`,
+    '',
+    '| Model | Status | Time | Output chars |',
+    '| --- | --- | ---: | ---: |',
+    ...tableRows.map((row) => `| ${row} |`),
+    '',
+    ...responseBlocks,
+    '',
+  ].join('\n')
 }
 
 function getPhaseStatusLabel(status: PhaseStatus): string {
@@ -1500,6 +1607,136 @@ function ContextGuardPanel({
   )
 }
 
+function ModelComparePanel({
+  isBusy,
+  isComparing,
+  maxSelections,
+  models,
+  onCopy,
+  onRun,
+  onToggleModel,
+  quickTask,
+  runs,
+  selectedModelNames,
+}: ModelComparePanelProps) {
+  const selectedCount = selectedModelNames.length
+  const runDisabled = isBusy || selectedCount < 2
+  const runLabel =
+    models.length < 2
+      ? 'Need 2 models'
+      : selectedCount < 2
+        ? 'Pick 2 models'
+        : isComparing
+          ? 'Comparing'
+          : isBusy
+            ? 'Running'
+            : 'Compare models'
+
+  return (
+    <section className="panel-section model-compare-panel">
+      <div className="section-title section-title-with-action">
+        <div className="section-title-label">
+          <GitBranch size={18} aria-hidden="true" />
+          <h2>Compare</h2>
+        </div>
+        <button
+          className="mini-icon-button"
+          type="button"
+          onClick={onCopy}
+          disabled={runs.length === 0}
+          aria-label="Copy model comparison"
+          title="Copy comparison"
+        >
+          <Copy size={14} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="compare-meta-row">
+        <span>{quickTaskLabels[quickTask]}</span>
+        <strong>
+          {selectedCount}/{maxSelections}
+        </strong>
+      </div>
+
+      <div className="compare-model-grid" aria-label="Models to compare">
+        {models.length === 0 ? (
+          <div className="compare-empty-state">No local models detected.</div>
+        ) : (
+          models.map((model) => {
+            const selected = selectedModelNames.includes(model.name)
+            const run = runs.find((candidate) => candidate.model === model.name)
+            const toggleDisabled =
+              isBusy || (!selected && selectedCount >= maxSelections)
+
+            return (
+              <button
+                className={
+                  selected
+                    ? 'compare-model-chip compare-model-chip-active'
+                    : 'compare-model-chip'
+                }
+                type="button"
+                key={model.name}
+                aria-pressed={selected}
+                disabled={toggleDisabled}
+                onClick={() => onToggleModel(model.name)}
+              >
+                <span className="compare-chip-dot" aria-hidden="true">
+                  {selected ? <CheckCircle2 size={13} /> : <Plus size={13} />}
+                </span>
+                <span>
+                  <strong title={model.name}>{model.name}</strong>
+                  <small>
+                    {run
+                      ? getModelCompareStatusLabel(run.status)
+                      : formatBytes(model.size)}
+                  </small>
+                </span>
+              </button>
+            )
+          })
+        )}
+      </div>
+
+      <button
+        className={`primary-button full-width ${isComparing ? 'is-loading' : ''}`}
+        type="button"
+        onClick={onRun}
+        disabled={runDisabled}
+      >
+        {isComparing ? (
+          <Loader2 size={17} aria-hidden="true" />
+        ) : (
+          <Play size={17} aria-hidden="true" />
+        )}
+        <span>{runLabel}</span>
+      </button>
+
+      {runs.length > 0 ? (
+        <div className="compare-results-list" aria-label="Model comparison results">
+          {runs.map((run) => (
+            <article className={`compare-result compare-result-${run.status}`} key={run.id}>
+              <div className="compare-result-top">
+                <strong title={run.model}>{run.model}</strong>
+                <span>{getModelCompareStatusLabel(run.status)}</span>
+              </div>
+              <div className="compare-result-stats">
+                <span>{formatModelCompareDuration(run.durationMs)}</span>
+                <span>{run.output.length.toLocaleString()} chars</span>
+              </div>
+              <pre>
+                {run.error ||
+                  run.output ||
+                  (run.status === 'running' ? 'Waiting for response.' : 'Queued.')}
+              </pre>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function RunQualityPanel({ checks, onCopy, score }: RunQualityPanelProps) {
   const scoreLabel = score >= 82 ? 'Ready' : score >= 58 ? 'Review' : 'Blocked'
 
@@ -1833,6 +2070,9 @@ function App() {
     initialDraft?.quickTask || 'summarize',
   )
   const [quickOutput, setQuickOutput] = useState('')
+  const [compareModelNames, setCompareModelNames] = useState<string[]>([])
+  const [compareRuns, setCompareRuns] = useState<ModelCompareRun[]>([])
+  const [isComparingModels, setIsComparingModels] = useState(false)
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
   const [isSourceDragging, setIsSourceDragging] = useState(false)
   const [chartType, setChartType] = useState<ChartType>('bar')
@@ -1889,6 +2129,9 @@ function App() {
   )
   const runButtonDisabled = isRunning || !selectedModel
   const quickActionDisabled = isRunning || !selectedModel
+  const compareMarkdown = compareRuns.length
+    ? createModelCompareMarkdown(compareRuns, quickTask, objective, new Date())
+    : ''
   const runButtonLabel = !selectedModel ? 'Model required' : isRunning ? 'Running' : 'Run agent'
   const quickActionLabel = !selectedModel ? 'Choose model' : 'Run quick action'
   const boardCommandTitle = isRunning
@@ -2253,6 +2496,31 @@ function App() {
   }, [selectedModel])
 
   useEffect(() => {
+    const availableNames = models.map((model) => model.name)
+    const availableSet = new Set(availableNames)
+
+    setCompareModelNames((current) => {
+      const retained = current
+        .filter((modelName) => availableSet.has(modelName))
+        .slice(0, maxModelCompareSelections)
+      const defaultNames = [selectedModel, ...availableNames]
+        .filter((modelName): modelName is string => Boolean(modelName))
+        .filter((modelName, index, list) => list.indexOf(modelName) === index)
+        .slice(0, Math.min(maxModelCompareSelections, availableNames.length))
+      const nextNames = retained.length > 0 ? retained : defaultNames
+      const unchanged =
+        current.length === nextNames.length &&
+        current.every((modelName, index) => modelName === nextNames[index])
+
+      return unchanged ? current : nextNames
+    })
+
+    setCompareRuns((current) =>
+      current.filter((run) => availableSet.has(run.model)),
+    )
+  }, [models, selectedModel])
+
+  useEffect(() => {
     if (!settings.autoSaveDrafts) {
       return
     }
@@ -2483,10 +2751,160 @@ function App() {
     }
   }
 
+  const toggleCompareModel = (modelName: string) => {
+    if (isRunning) {
+      return
+    }
+
+    setCompareModelNames((current) => {
+      if (current.includes(modelName)) {
+        return current.filter((name) => name !== modelName)
+      }
+
+      if (current.length >= maxModelCompareSelections) {
+        return current
+      }
+
+      return [...current, modelName]
+    })
+  }
+
+  const copyModelComparison = async () => {
+    if (!compareMarkdown) {
+      appendConsole('Run a model comparison before copying.')
+      return
+    }
+
+    if (await copyTextToClipboard(compareMarkdown)) {
+      appendConsole('Model comparison copied.')
+    } else {
+      appendConsole('Model comparison copy failed.')
+    }
+  }
+
+  const runModelCompare = async () => {
+    if (isRunning) {
+      return
+    }
+
+    const availableNames = new Set(models.map((model) => model.name))
+    const modelNames = compareModelNames
+      .filter((modelName) => availableNames.has(modelName))
+      .slice(0, maxModelCompareSelections)
+
+    if (modelNames.length < 2) {
+      appendConsole('Choose at least two local models before comparing.')
+      return
+    }
+
+    const controller = new AbortController()
+    const compareStartedAt = new Date()
+    const prompt = buildQuickPrompt(quickTask, sourceText, objective)
+    let nextRuns: ModelCompareRun[] = modelNames.map((modelName, index) => ({
+      id: `${compareStartedAt.getTime()}-${index}-${modelName}`,
+      model: modelName,
+      output: '',
+      status: 'idle',
+    }))
+    const publishComparison = () => {
+      setCompareRuns(nextRuns)
+      setQuickOutput(
+        createModelCompareMarkdown(nextRuns, quickTask, objective, compareStartedAt),
+      )
+    }
+
+    setCompareModelNames(modelNames)
+    setCompareRuns(nextRuns)
+    setSteps(createInitialSteps())
+    setQuickOutput('')
+    setIsRunning(true)
+    setIsComparingModels(true)
+    setIsAgentThinking(true)
+    setSelectedWorkbenchPhaseId('final')
+    activeRunController.current = controller
+    publishComparison()
+    appendConsole(`Model comparison started across ${modelNames.length} local models.`)
+
+    let stoppedByUser = false
+
+    try {
+      for (const modelName of modelNames) {
+        if (controller.signal.aborted) {
+          stoppedByUser = true
+          break
+        }
+
+        const modelStartedAt = performance.now()
+        nextRuns = nextRuns.map((run) =>
+          run.model === modelName
+            ? { ...run, error: undefined, status: 'running' }
+            : run,
+        )
+        publishComparison()
+        appendConsole(`Comparing ${modelName}.`)
+
+        try {
+          const output = await generateWithOllama(
+            modelName,
+            prompt,
+            settings,
+            controller.signal,
+          )
+          nextRuns = nextRuns.map((run) =>
+            run.model === modelName
+              ? {
+                  ...run,
+                  durationMs: Math.round(performance.now() - modelStartedAt),
+                  output,
+                  status: 'done',
+                }
+              : run,
+          )
+          publishComparison()
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : `${modelName} comparison failed.`
+          stoppedByUser = message === 'Request stopped by user.'
+          nextRuns = nextRuns.map((run) =>
+            run.model === modelName
+              ? {
+                  ...run,
+                  durationMs: Math.round(performance.now() - modelStartedAt),
+                  error: stoppedByUser ? 'Stopped by user.' : message,
+                  status: 'error',
+                }
+              : run,
+          )
+          publishComparison()
+
+          if (stoppedByUser) {
+            break
+          }
+        }
+      }
+
+      if (stoppedByUser) {
+        appendConsole('Model comparison stopped by user.')
+      } else if (nextRuns.some((run) => run.status === 'error')) {
+        appendConsole('Model comparison completed with errors.')
+      } else {
+        appendConsole('Model comparison completed.')
+      }
+    } finally {
+      if (activeRunController.current === controller) {
+        activeRunController.current = null
+      }
+      setIsAgentThinking(false)
+      setIsComparingModels(false)
+      setIsRunning(false)
+    }
+  }
+
   const loadTemplate = (template: Template) => {
     setObjective(template.objective)
     setSourceText(template.sourceText)
     setSourceFiles([])
+    setCompareRuns([])
     appendConsole(`${template.title} template loaded.`)
   }
 
@@ -2503,6 +2921,7 @@ function App() {
       })),
     )
     setQuickOutput(demoOutput)
+    setCompareRuns([])
     setSelectedWorkbenchPhaseId('final')
     appendConsole('Demo run loaded.')
   }
@@ -2667,12 +3086,15 @@ function App() {
     setSourceText(sampleText)
     setSourceFiles([])
     setQuickTask('summarize')
+    setCompareRuns([])
     appendConsole('Draft reset to the starter workspace.')
   }
 
   const clearLocalData = () => {
     setHistory([])
     setQuickOutput('')
+    setCompareRuns([])
+    setCompareModelNames([])
     setObjective(defaultObjective)
     setSourceText(sampleText)
     setSourceFiles([])
@@ -3265,6 +3687,19 @@ function App() {
             goalCharacters={goalCharacterCount}
             sourceCharacters={sourceCharacterCount}
             systemStats={systemStats}
+          />
+
+          <ModelComparePanel
+            isBusy={isRunning}
+            isComparing={isComparingModels}
+            maxSelections={maxModelCompareSelections}
+            models={models}
+            onCopy={copyModelComparison}
+            onRun={runModelCompare}
+            onToggleModel={toggleCompareModel}
+            quickTask={quickTask}
+            runs={compareRuns}
+            selectedModelNames={compareModelNames}
           />
 
           <section className="panel-section setup-section">

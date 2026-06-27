@@ -7,6 +7,7 @@ Everything runs locally. The browser app talks to Ollama through a local proxy p
 ## What it does
 
 - Finds locally installed Ollama models.
+- Compares multiple local Ollama models with one click using the same prompt, then writes a timing/output report into the workbench.
 - Runs a visual five-phase agent loop: Intake, Strategy, Workbench, Review, Ship.
 - Adds review buttons for every phase so you can inspect what each phase outputs and feeds forward.
 - Shows a Matrix-style workbench while the agent is thinking, then writes the finished output into the same window.
