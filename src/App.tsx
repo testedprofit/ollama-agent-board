@@ -81,7 +81,7 @@ import {
 type ConnectionState = 'checking' | 'online' | 'offline'
 type PhaseStatus = 'idle' | 'active' | 'done' | 'error'
 type AppView = 'board' | 'settings'
-type AppTheme = 'light' | 'dark' | 'purple'
+type AppTheme = 'light' | 'dark' | 'purple' | 'matrix'
 
 type AgentPhase = {
   id: string
@@ -396,6 +396,12 @@ const appThemes: Array<{
     description: 'Neon violet local AI console.',
     swatches: ['#170f2f', '#a855f7', '#2dd4bf'],
   },
+  {
+    id: 'matrix',
+    title: 'Matrix',
+    description: 'Black glass, phosphor green glow.',
+    swatches: ['#020805', '#39ff14', '#0f2f16'],
+  },
 ]
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -509,7 +515,7 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 }
 
 function isAppTheme(value: unknown): value is AppTheme {
-  return value === 'light' || value === 'dark' || value === 'purple'
+  return value === 'light' || value === 'dark' || value === 'purple' || value === 'matrix'
 }
 
 function sanitizeSettings(value: unknown): AppSettings {

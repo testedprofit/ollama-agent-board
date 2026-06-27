@@ -1105,7 +1105,7 @@ button:disabled {
 .theme-option-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .theme-option {
@@ -1149,8 +1149,13 @@ button:disabled {
 }
 
 .theme-preview-dark,
-.theme-preview-purple {
+.theme-preview-purple,
+.theme-preview-matrix {
   background: #101827;
+}
+
+.theme-preview-matrix {
+  box-shadow: inset 0 0 18px rgba(57, 255, 20, 0.28);
 }
 
 .theme-option strong,
@@ -2248,6 +2253,220 @@ button:disabled {
 :root[data-theme='purple'] .react-flow__controls-button {
   background: var(--surface);
   border-color: var(--line);
+  color: var(--ink);
+}
+
+:root[data-theme='matrix'] .topbar {
+  background: rgba(2, 8, 5, 0.94);
+  border-bottom-color: rgba(57, 255, 20, 0.32);
+  box-shadow: 0 10px 36px rgba(0, 255, 65, 0.1);
+}
+
+:root[data-theme='matrix'] .brand-mark {
+  background:
+    linear-gradient(135deg, #031408, #39ff14),
+    #031408;
+  box-shadow:
+    0 0 22px rgba(57, 255, 20, 0.36),
+    0 12px 30px rgba(0, 0, 0, 0.34);
+  color: #001604;
+}
+
+:root[data-theme='matrix'] .command-strip {
+  background:
+    linear-gradient(90deg, rgba(57, 255, 20, 0.13), transparent 62%),
+    linear-gradient(180deg, rgba(10, 31, 15, 0.96), rgba(0, 15, 5, 0.94));
+  border-color: rgba(57, 255, 20, 0.32);
+  box-shadow:
+    0 0 28px rgba(57, 255, 20, 0.12),
+    var(--shadow);
+}
+
+:root[data-theme='matrix'] .panel-section,
+:root[data-theme='matrix'] .canvas-panel,
+:root[data-theme='matrix'] .settings-panel,
+:root[data-theme='matrix'] .phase-review-panel {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border-color: rgba(57, 255, 20, 0.24);
+  box-shadow:
+    0 0 24px rgba(57, 255, 20, 0.08),
+    var(--shadow);
+}
+
+:root[data-theme='matrix'] .topbar-chip,
+:root[data-theme='matrix'] .status-pill,
+:root[data-theme='matrix'] .command-metric,
+:root[data-theme='matrix'] .icon-button,
+:root[data-theme='matrix'] .ghost-button,
+:root[data-theme='matrix'] .mini-icon-button,
+:root[data-theme='matrix'] .setup-link-button,
+:root[data-theme='matrix'] .phase-chip,
+:root[data-theme='matrix'] .stats-live-pill,
+:root[data-theme='matrix'] .settings-nav a,
+:root[data-theme='matrix'] .settings-link-grid a,
+:root[data-theme='matrix'] .settings-range-row strong,
+:root[data-theme='matrix'] .settings-readonly,
+:root[data-theme='matrix'] .settings-stat,
+:root[data-theme='matrix'] .settings-status-item,
+:root[data-theme='matrix'] .theme-preview,
+:root[data-theme='matrix'] .phase-review-status {
+  background: var(--surface);
+  border-color: rgba(57, 255, 20, 0.22);
+  color: var(--ink);
+}
+
+:root[data-theme='matrix'] .topbar-chip svg,
+:root[data-theme='matrix'] .section-title svg,
+:root[data-theme='matrix'] .settings-panel-header > svg {
+  color: var(--accent);
+  filter: drop-shadow(0 0 8px rgba(57, 255, 20, 0.38));
+}
+
+:root[data-theme='matrix'] select,
+:root[data-theme='matrix'] textarea {
+  background: var(--surface-strong);
+  border-color: rgba(57, 255, 20, 0.32);
+  color: var(--ink);
+}
+
+:root[data-theme='matrix'] .readiness-item,
+:root[data-theme='matrix'] .template-button,
+:root[data-theme='matrix'] .setup-item,
+:root[data-theme='matrix'] .theme-option,
+:root[data-theme='matrix'] .settings-toggle,
+:root[data-theme='matrix'] .phase-progress-item,
+:root[data-theme='matrix'] .run-button,
+:root[data-theme='matrix'] .phase-review-panel pre,
+:root[data-theme='matrix'] .stats-meter,
+:root[data-theme='matrix'] .stats-meta-grid div,
+:root[data-theme='matrix'] .context-gauge,
+:root[data-theme='matrix'] .guardrail-grid div,
+:root[data-theme='matrix'] .quality-score-row,
+:root[data-theme='matrix'] .quality-check {
+  background: var(--surface-soft);
+  border-color: rgba(57, 255, 20, 0.2);
+  color: var(--ink);
+}
+
+:root[data-theme='matrix'] .theme-option-active {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px rgba(57, 255, 20, 0.16),
+    0 0 22px rgba(57, 255, 20, 0.18);
+}
+
+:root[data-theme='matrix'] .quality-score::after {
+  background: var(--surface-soft);
+}
+
+:root[data-theme='matrix'] .primary-button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #001604;
+  box-shadow: 0 0 18px rgba(57, 255, 20, 0.24);
+}
+
+:root[data-theme='matrix'] .primary-button:not(:disabled):hover {
+  background: #7dff75;
+  border-color: #7dff75;
+}
+
+:root[data-theme='matrix'] .phase-progress-item:hover,
+:root[data-theme='matrix'] .phase-progress-selected {
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface-soft));
+}
+
+:root[data-theme='matrix'] .mode-button {
+  background: var(--surface);
+  border-color: rgba(57, 255, 20, 0.2);
+  color: var(--muted);
+}
+
+:root[data-theme='matrix'] .mode-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #001604;
+}
+
+:root[data-theme='matrix'] .danger-button {
+  background: color-mix(in srgb, #ef4444 12%, var(--surface));
+  border-color: color-mix(in srgb, #ef4444 42%, var(--line));
+  color: #fecaca;
+}
+
+:root[data-theme='matrix'] .setup-copy-button {
+  background: var(--surface-strong);
+  border-color: rgba(57, 255, 20, 0.28);
+  color: var(--surface-text-on-strong);
+}
+
+:root[data-theme='matrix'] .phase-progress-rail {
+  background: rgba(57, 255, 20, 0.16);
+}
+
+:root[data-theme='matrix'] .phase-progress-index,
+:root[data-theme='matrix'] .phase-progress-final .phase-progress-index {
+  background: var(--surface);
+  border-color: rgba(57, 255, 20, 0.28);
+  color: var(--muted);
+}
+
+:root[data-theme='matrix'] .phase-progress-active .phase-progress-index,
+:root[data-theme='matrix'] .phase-progress-done .phase-progress-index {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #001604;
+}
+
+:root[data-theme='matrix'] .flow-shell {
+  background:
+    linear-gradient(90deg, rgba(57, 255, 20, 0.11) 1px, transparent 1px),
+    linear-gradient(rgba(57, 255, 20, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 50% 42%, rgba(57, 255, 20, 0.12), transparent 42%),
+    #010704;
+  background-size:
+    36px 36px,
+    36px 36px,
+    auto,
+    auto;
+}
+
+:root[data-theme='matrix'] .agent-node {
+  background: rgba(6, 19, 10, 0.96);
+  border-color: rgba(57, 255, 20, 0.24);
+  color: var(--ink);
+}
+
+:root[data-theme='matrix'] .agent-node-active {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--node-accent) 24%, transparent),
+    0 0 34px rgba(57, 255, 20, 0.2);
+}
+
+:root[data-theme='matrix'] .agent-node-icon,
+:root[data-theme='matrix'] .agent-node-status {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+:root[data-theme='matrix'] .agent-node p {
+  color: var(--muted);
+}
+
+:root[data-theme='matrix'] .output-box,
+:root[data-theme='matrix'] .console-list {
+  background: var(--surface-strong);
+  color: var(--surface-text-on-strong);
+  box-shadow: inset 0 0 18px rgba(57, 255, 20, 0.08);
+}
+
+:root[data-theme='matrix'] .console-list p {
+  color: var(--surface-text-on-strong);
+}
+
+:root[data-theme='matrix'] .react-flow__controls-button {
+  background: var(--surface);
+  border-color: rgba(57, 255, 20, 0.26);
   color: var(--ink);
 }
 
