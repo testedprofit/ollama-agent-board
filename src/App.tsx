@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type CSSProperties,
+  type DragEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -22,6 +23,10 @@ import {
   Activity,
   Boxes,
   Brain,
+  ChartColumn,
+  ChartLine,
+  ChartNoAxesCombined,
+  ChartPie,
   CheckCircle2,
   ClipboardList,
   Copy,
@@ -30,7 +35,9 @@ import {
   Download,
   Eye,
   ExternalLink,
+  FilePlus,
   FileText,
+  FileUp,
   Gauge,
   GitBranch,
   HardDrive,
@@ -77,6 +84,13 @@ import {
   type ContextSnapshot,
   type RunQualityCheck,
 } from './lib/localQa'
+import {
+  chartDatasetToCsv,
+  formatChartDatasetForClipboard,
+  parseChartDataset,
+  type ChartDataset,
+  type ChartType,
+} from './lib/sourceInsights'
 
 type ConnectionState = 'checking' | 'online' | 'offline'
 type PhaseStatus = 'idle' | 'active' | 'done' | 'error'
@@ -161,6 +175,16 @@ type SavedRun = {
   objective: string
   model: string
   output: string
+}
+
+type SourceFile = {
+  detail: string
+  id: string
+  name: string
+  size: number
+  status: 'ready' | 'skipped' | 'error'
+  text: string
+  type: string
 }
 
 type DraftState = {
@@ -262,6 +286,14 @@ type RunQualityPanelProps = {
   checks: RunQualityCheck[]
   onCopy: () => void
   score: number
+}
+
+type ChartPanelProps = {
+  chartType: ChartType
+  dataset: ChartDataset | null
+  onChartTypeChange: (type: ChartType) => void
+  onCopy: () => void
+  onExport: () => void
 }
 
 const matrixStreams = [
@@ -373,6 +405,42 @@ const setupLinks = {
   nodeDownload: 'https://nodejs.org/en/download',
   ollamaWindows: 'https://ollama.com/download/windows',
 }
+
+const maxSourceFileBytes = 900_000
+const supportedSourceExtensions = [
+  '.csv',
+  '.tsv',
+  '.json',
+  '.txt',
+  '.md',
+  '.log',
+  '.js',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.html',
+  '.css',
+]
+const sourceFileAccept = supportedSourceExtensions.join(',')
+const chartPalette = [
+  '#0f8b8d',
+  '#6d5dfc',
+  '#d85a3a',
+  '#2d7d46',
+  '#a15c00',
+  '#38bdf8',
+  '#a855f7',
+  '#f97316',
+]
+const chartDemoSource = [
+  'month,local_runs,docs_created',
+  'Jan,18,6',
+  'Feb,26,11',
+  'Mar,41,19',
+  'Apr,57,27',
+  'May,73,38',
+  'Jun,96,51',
+].join('\n')
 
 const appThemes: Array<{
   id: AppTheme
@@ -710,6 +778,39 @@ function formatDuration(seconds?: number): string {
   }
 
   return `${Math.max(minutes, 1)}m`
+}
+
+function formatCompactNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: Math.abs(value) >= 10 ? 0 : 1,
+    notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
+  }).format(value)
+}
+
+function truncateLabel(value: string, maxLength = 12): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value
+}
+
+function getSourceFileExtension(fileName: string): string {
+  const dotIndex = fileName.lastIndexOf('.')
+  return dotIndex === -1 ? '' : fileName.slice(dotIndex).toLowerCase()
+}
+
+function isSupportedSourceFile(file: File): boolean {
+  const extension = getSourceFileExtension(file.name)
+  return (
+    supportedSourceExtensions.includes(extension) ||
+    file.type.startsWith('text/') ||
+    file.type === 'application/json'
+  )
+}
+
+function createFileSourceBlock(file: SourceFile): string {
+  return [`## File: ${file.name}`, '', file.text.trim()].join('\n')
+}
+
+function createSourceFileId(file: File): string {
+  return `${file.name}-${file.lastModified}-${file.size}-${crypto.randomUUID()}`
 }
 
 function createRequestSignal(timeoutMs: number, externalSignal?: AbortSignal) {
@@ -1446,6 +1547,262 @@ function RunQualityPanel({ checks, onCopy, score }: RunQualityPanelProps) {
   )
 }
 
+function ChartPanel({
+  chartType,
+  dataset,
+  onChartTypeChange,
+  onCopy,
+  onExport,
+}: ChartPanelProps) {
+  const points = dataset?.points ?? []
+  const values = points.map((point) => point.value)
+  const minValue = Math.min(0, ...values)
+  const maxValue = Math.max(0, ...values)
+  const valueRange = maxValue - minValue || 1
+  const chartWidth = 340
+  const chartHeight = 190
+  const plotLeft = 32
+  const plotRight = 18
+  const plotTop = 18
+  const plotBottom = 42
+  const plotWidth = chartWidth - plotLeft - plotRight
+  const plotHeight = chartHeight - plotTop - plotBottom
+  const scaleY = (value: number) =>
+    plotTop + plotHeight - ((value - minValue) / valueRange) * plotHeight
+  const zeroY = scaleY(0)
+  const linePoints =
+    points.length > 1
+      ? points
+          .map((point, index) => {
+            const x =
+              plotLeft +
+              (points.length === 1 ? plotWidth / 2 : (plotWidth / (points.length - 1)) * index)
+            return `${x},${scaleY(point.value)}`
+          })
+          .join(' ')
+      : ''
+  const donutValues = points.map((point) => Math.abs(point.value))
+  const donutTotal = donutValues.reduce((sum, value) => sum + value, 0)
+  let donutCursor = 0
+  const donutGradient =
+    donutTotal > 0
+      ? points
+          .map((point, index) => {
+            const degrees = (Math.abs(point.value) / donutTotal) * 360
+            const start = donutCursor
+            const end = donutCursor + degrees
+            donutCursor = end
+            return `${chartPalette[index % chartPalette.length]} ${start}deg ${end}deg`
+          })
+          .join(', ')
+      : '#cbd5e1 0deg 360deg'
+
+  return (
+    <section className="panel-section chart-panel">
+      <div className="section-title section-title-with-action">
+        <div className="section-title-label">
+          <ChartNoAxesCombined size={18} aria-hidden="true" />
+          <h2>Charts</h2>
+        </div>
+        <div className="chart-actions">
+          <button
+            className="mini-icon-button"
+            type="button"
+            onClick={onCopy}
+            disabled={!dataset}
+            aria-label="Copy chart data"
+            title="Copy chart data"
+          >
+            <Copy size={14} aria-hidden="true" />
+          </button>
+          <button
+            className="mini-icon-button"
+            type="button"
+            onClick={onExport}
+            disabled={!dataset}
+            aria-label="Export chart CSV"
+            title="Export chart CSV"
+          >
+            <Download size={14} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <div className="chart-mode-row" role="radiogroup" aria-label="Chart type">
+        {([
+          { icon: ChartColumn, label: 'Bar', value: 'bar' },
+          { icon: ChartLine, label: 'Line', value: 'line' },
+          { icon: ChartPie, label: 'Donut', value: 'donut' },
+        ] as Array<{ icon: LucideIcon; label: string; value: ChartType }>).map(
+          (mode) => {
+            const Icon = mode.icon
+            return (
+              <button
+                className={chartType === mode.value ? 'mode-button active' : 'mode-button'}
+                type="button"
+                role="radio"
+                aria-checked={chartType === mode.value}
+                key={mode.value}
+                onClick={() => onChartTypeChange(mode.value)}
+              >
+                <Icon size={14} aria-hidden="true" />
+                <span>{mode.label}</span>
+              </button>
+            )
+          },
+        )}
+      </div>
+
+      {dataset ? (
+        <>
+          <div className="chart-meta-grid">
+            <div>
+              <span>Rows</span>
+              <strong>{points.length}</strong>
+            </div>
+            <div>
+              <span>Total</span>
+              <strong>{formatCompactNumber(dataset.total)}</strong>
+            </div>
+            <div>
+              <span>Range</span>
+              <strong>
+                {formatCompactNumber(dataset.min)} to {formatCompactNumber(dataset.max)}
+              </strong>
+            </div>
+          </div>
+
+          <div className="chart-canvas" role="img" aria-label={dataset.title}>
+            {chartType === 'donut' ? (
+              <div className="donut-chart-wrap">
+                <div
+                  className="donut-chart"
+                  style={{ '--donut-gradient': donutGradient } as CSSProperties}
+                  aria-hidden="true"
+                >
+                  <span>{formatCompactNumber(dataset.total)}</span>
+                </div>
+                <div className="chart-legend">
+                  {points.slice(0, 8).map((point, index) => (
+                    <span key={`${point.label}-${index}`}>
+                      <i
+                        style={
+                          {
+                            '--legend-color': chartPalette[index % chartPalette.length],
+                          } as CSSProperties
+                        }
+                        aria-hidden="true"
+                      ></i>
+                      {truncateLabel(point.label, 18)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <svg className="chart-svg" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
+                <line
+                  className="chart-axis"
+                  x1={plotLeft}
+                  x2={chartWidth - plotRight}
+                  y1={zeroY}
+                  y2={zeroY}
+                />
+                <line
+                  className="chart-axis"
+                  x1={plotLeft}
+                  x2={plotLeft}
+                  y1={plotTop}
+                  y2={chartHeight - plotBottom}
+                />
+                {chartType === 'bar'
+                  ? points.map((point, index) => {
+                      const slot = plotWidth / points.length
+                      const barWidth = Math.max(12, slot * 0.58)
+                      const x = plotLeft + index * slot + (slot - barWidth) / 2
+                      const y = Math.min(scaleY(point.value), zeroY)
+                      const height = Math.max(2, Math.abs(scaleY(point.value) - zeroY))
+
+                      return (
+                        <g key={`${point.label}-${index}`}>
+                          <rect
+                            className="chart-bar"
+                            x={x}
+                            y={y}
+                            width={barWidth}
+                            height={height}
+                            rx="4"
+                            style={
+                              {
+                                '--bar-color': chartPalette[index % chartPalette.length],
+                              } as CSSProperties
+                            }
+                          />
+                          <text className="chart-value" x={x + barWidth / 2} y={y - 5}>
+                            {formatCompactNumber(point.value)}
+                          </text>
+                          <text
+                            className="chart-label"
+                            x={x + barWidth / 2}
+                            y={chartHeight - 18}
+                          >
+                            {truncateLabel(point.label)}
+                          </text>
+                        </g>
+                      )
+                    })
+                  : null}
+                {chartType === 'line' ? (
+                  <>
+                    <polyline className="chart-line" points={linePoints} />
+                    {points.map((point, index) => {
+                      const x =
+                        plotLeft +
+                        (points.length === 1
+                          ? plotWidth / 2
+                          : (plotWidth / (points.length - 1)) * index)
+                      const y = scaleY(point.value)
+
+                      return (
+                        <g key={`${point.label}-${index}`}>
+                          <circle
+                            className="chart-dot"
+                            cx={x}
+                            cy={y}
+                            r="4.5"
+                            style={
+                              {
+                                '--dot-color': chartPalette[index % chartPalette.length],
+                              } as CSSProperties
+                            }
+                          />
+                          <text className="chart-label" x={x} y={chartHeight - 18}>
+                            {truncateLabel(point.label)}
+                          </text>
+                        </g>
+                      )
+                    })}
+                  </>
+                ) : null}
+              </svg>
+            )}
+          </div>
+
+          <div className="chart-summary">
+            <strong>{dataset.title}</strong>
+            <span>{dataset.sourceType.toUpperCase()} auto-detected from Source.</span>
+          </div>
+        </>
+      ) : (
+        <div className="chart-empty">
+          <ChartNoAxesCombined size={22} aria-hidden="true" />
+          <strong>No chartable data yet</strong>
+          <span>Use CSV, TSV, JSON, or one label-value pair per line.</span>
+        </div>
+      )}
+    </section>
+  )
+}
+
 const nodeTypes = {
   agent: AgentNode,
 }
@@ -1476,6 +1833,9 @@ function App() {
     initialDraft?.quickTask || 'summarize',
   )
   const [quickOutput, setQuickOutput] = useState('')
+  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
+  const [isSourceDragging, setIsSourceDragging] = useState(false)
+  const [chartType, setChartType] = useState<ChartType>('bar')
   const [isRunning, setIsRunning] = useState(false)
   const [isAgentThinking, setIsAgentThinking] = useState(false)
   const [selectedWorkbenchPhaseId, setSelectedWorkbenchPhaseId] =
@@ -1491,6 +1851,7 @@ function App() {
   const activeRunController = useRef<AbortController | null>(null)
   const draftStorageWarningShown = useRef(false)
   const settingsFileInputRef = useRef<HTMLInputElement | null>(null)
+  const sourceFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const activeModel = models.find((model) => model.name === selectedModel)
   const completedSteps = steps.filter((step) => step.status === 'done').length
@@ -1508,6 +1869,7 @@ function App() {
     () => getContextSnapshot(objective, sourceText, settings.contextTokens),
     [objective, settings.contextTokens, sourceText],
   )
+  const chartDataset = useMemo(() => parseChartDataset(sourceText), [sourceText])
   const runQualityChecks = useMemo(
     () =>
       createRunQualityChecks({
@@ -1665,6 +2027,149 @@ function App() {
     } else {
       appendConsole('Clipboard copy failed. Use the setup command from the guide.')
     }
+  }
+
+  const loadSourceFiles = useCallback(
+    async (fileList: FileList | File[]) => {
+      const incomingFiles = Array.from(fileList)
+      if (incomingFiles.length === 0) {
+        return
+      }
+
+      const processedFiles = await Promise.all(
+        incomingFiles.map(async (file): Promise<SourceFile> => {
+          if (file.size > maxSourceFileBytes) {
+            return {
+              detail: `Over ${formatBytes(maxSourceFileBytes)} limit`,
+              id: createSourceFileId(file),
+              name: file.name,
+              size: file.size,
+              status: 'skipped',
+              text: '',
+              type: file.type || getSourceFileExtension(file.name) || 'unknown',
+            }
+          }
+
+          if (!isSupportedSourceFile(file)) {
+            return {
+              detail: 'Unsupported file type',
+              id: createSourceFileId(file),
+              name: file.name,
+              size: file.size,
+              status: 'skipped',
+              text: '',
+              type: file.type || getSourceFileExtension(file.name) || 'unknown',
+            }
+          }
+
+          try {
+            const text = await file.text()
+            return {
+              detail: `${text.trim().length.toLocaleString()} chars`,
+              id: createSourceFileId(file),
+              name: file.name,
+              size: file.size,
+              status: 'ready',
+              text,
+              type: file.type || getSourceFileExtension(file.name) || 'text',
+            }
+          } catch {
+            return {
+              detail: 'Read failed',
+              id: createSourceFileId(file),
+              name: file.name,
+              size: file.size,
+              status: 'error',
+              text: '',
+              type: file.type || getSourceFileExtension(file.name) || 'unknown',
+            }
+          }
+        }),
+      )
+
+      const readyFiles = processedFiles.filter((file) => file.status === 'ready')
+      const skippedFiles = processedFiles.filter((file) => file.status !== 'ready')
+
+      if (readyFiles.length > 0) {
+        const fileBlocks = readyFiles.map(createFileSourceBlock).join('\n\n')
+        setSourceFiles((current) => [...readyFiles, ...current].slice(0, 8))
+        setSourceText((current) =>
+          current.trim() ? `${current.trimEnd()}\n\n${fileBlocks}` : fileBlocks,
+        )
+        appendConsole(
+          `Loaded ${readyFiles.length} local file${readyFiles.length === 1 ? '' : 's'} into Source.`,
+        )
+      }
+
+      if (skippedFiles.length > 0) {
+        appendConsole(
+          `${skippedFiles.length} file${skippedFiles.length === 1 ? '' : 's'} skipped or unreadable.`,
+        )
+      }
+    },
+    [appendConsole],
+  )
+
+  const handleSourceFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    event.target.value = ''
+
+    if (files) {
+      void loadSourceFiles(files)
+    }
+  }
+
+  const handleSourceDragOver = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    if (Array.from(event.dataTransfer.types).includes('Files')) {
+      setIsSourceDragging(true)
+    }
+  }
+
+  const handleSourceDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    setIsSourceDragging(false)
+    void loadSourceFiles(event.dataTransfer.files)
+  }
+
+  const clearSourceFiles = () => {
+    setSourceFiles([])
+    appendConsole('Local file list cleared. Source text remains editable.')
+  }
+
+  const loadChartDemo = () => {
+    setObjective('Turn this local activity table into a chart and explain the trend.')
+    setSourceText(chartDemoSource)
+    setSourceFiles([])
+    setChartType('bar')
+    appendConsole('Chart demo data loaded.')
+  }
+
+  const copyChartData = async () => {
+    if (!chartDataset) {
+      appendConsole('No chartable source data to copy.')
+      return
+    }
+
+    if (await copyTextToClipboard(formatChartDatasetForClipboard(chartDataset))) {
+      appendConsole('Chart data copied.')
+    } else {
+      appendConsole('Chart data copy failed.')
+    }
+  }
+
+  const exportChartData = () => {
+    if (!chartDataset) {
+      appendConsole('No chartable source data to export.')
+      return
+    }
+
+    downloadTextFile(
+      'ollama-agent-chart-data.csv',
+      chartDatasetToCsv(chartDataset),
+      'text/csv;charset=utf-8',
+    )
+    appendConsole('Chart CSV export created.')
   }
 
   const refreshModels = useCallback(async () => {
@@ -1981,6 +2486,7 @@ function App() {
   const loadTemplate = (template: Template) => {
     setObjective(template.objective)
     setSourceText(template.sourceText)
+    setSourceFiles([])
     appendConsole(`${template.title} template loaded.`)
   }
 
@@ -2159,6 +2665,7 @@ function App() {
     removeDraft()
     setObjective(defaultObjective)
     setSourceText(sampleText)
+    setSourceFiles([])
     setQuickTask('summarize')
     appendConsole('Draft reset to the starter workspace.')
   }
@@ -2168,6 +2675,7 @@ function App() {
     setQuickOutput('')
     setObjective(defaultObjective)
     setSourceText(sampleText)
+    setSourceFiles([])
     setQuickTask('summarize')
     setSteps(createInitialSteps())
     setSelectedWorkbenchPhaseId('final')
@@ -2958,11 +3466,87 @@ function App() {
             score={runQualityScore}
           />
 
-          <section className="panel-section">
-            <div className="section-title">
-              <FileText size={18} aria-hidden="true" />
-              <h2>Source</h2>
+          <section
+            className={`panel-section source-panel ${
+              isSourceDragging ? 'source-panel-dragging' : ''
+            }`}
+            onDragLeave={() => setIsSourceDragging(false)}
+            onDragOver={handleSourceDragOver}
+            onDrop={handleSourceDrop}
+          >
+            <div className="section-title section-title-with-action">
+              <div className="section-title-label">
+                <FileText size={18} aria-hidden="true" />
+                <h2>Source</h2>
+              </div>
+              <button
+                className="mini-icon-button"
+                type="button"
+                onClick={() => sourceFileInputRef.current?.click()}
+                aria-label="Browse local source files"
+                title="Browse local files"
+              >
+                <FileUp size={14} aria-hidden="true" />
+              </button>
             </div>
+
+            <div className="source-file-zone">
+              <div className="source-file-zone-main">
+                <FilePlus size={18} aria-hidden="true" />
+                <span>
+                  <strong>Local files</strong>
+                  <small>CSV, TSV, JSON, TXT, MD, LOG</small>
+                </span>
+              </div>
+              <div className="source-file-actions">
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={() => sourceFileInputRef.current?.click()}
+                >
+                  <FileUp size={15} aria-hidden="true" />
+                  <span>Browse</span>
+                </button>
+                <button className="ghost-button" type="button" onClick={loadChartDemo}>
+                  <ChartNoAxesCombined size={15} aria-hidden="true" />
+                  <span>Demo data</span>
+                </button>
+              </div>
+            </div>
+
+            <input
+              ref={sourceFileInputRef}
+              className="visually-hidden"
+              type="file"
+              multiple
+              accept={sourceFileAccept}
+              onChange={handleSourceFileInput}
+            />
+
+            {sourceFiles.length > 0 ? (
+              <div className="source-file-list" aria-label="Loaded local files">
+                {sourceFiles.map((file) => (
+                  <div className={`source-file-chip source-file-${file.status}`} key={file.id}>
+                    <span>
+                      <strong>{file.name}</strong>
+                      <small>
+                        {formatBytes(file.size)} - {file.detail}
+                      </small>
+                    </span>
+                  </div>
+                ))}
+                <button
+                  className="mini-icon-button"
+                  type="button"
+                  onClick={clearSourceFiles}
+                  aria-label="Clear loaded file list"
+                  title="Clear loaded files"
+                >
+                  <Trash2 size={14} aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+
             <textarea
               className="source-input"
               value={sourceText}
@@ -2996,6 +3580,14 @@ function App() {
               <span>{quickActionLabel}</span>
             </button>
           </section>
+
+          <ChartPanel
+            chartType={chartType}
+            dataset={chartDataset}
+            onChartTypeChange={setChartType}
+            onCopy={copyChartData}
+            onExport={exportChartData}
+          />
 
           <section className="panel-section output-section">
             <div className="section-title">

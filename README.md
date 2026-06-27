@@ -12,6 +12,8 @@ Everything runs locally. The browser app talks to Ollama through a local proxy p
 - Shows a Matrix-style workbench while the agent is thinking, then writes the finished output into the same window.
 - Provides reusable workflows for inbox triage, study guides, code review, and launch briefs.
 - Runs quick actions against pasted text: summarize, extract tasks, rewrite, and explain.
+- Accepts dropped or browsed local text files, CSV, TSV, JSON, Markdown, logs, and simple code files into the Source panel.
+- Generates local bar, line, and donut charts from CSV, TSV, JSON, or label-value source data.
 - Shows local PC CPU, memory, and Ollama process load while models are running.
 - Autosaves the current goal/source draft locally so refreshes do not wipe work.
 - Adds context pressure, model-fit guardrails, and a run QA score before shipping output.
